@@ -1,4 +1,4 @@
--- [K] VOIDHUB Custom GUI v21 (Fast Spin & Auclt Fling)
+-- [K] PAINTHUB Custom GUI v23
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -38,7 +38,7 @@ local UIElements = {
 -- ERROR HANDLING & BADGE
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VoidHub"
+ScreenGui.Name = "PaintHub"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = game.CoreGui
@@ -324,7 +324,7 @@ local success, err = pcall(function()
     TitleText.Size = UDim2.new(1, -80, 1, 0)
     TitleText.Position = UDim2.new(0, 10, 0, 0)
     TitleText.BackgroundTransparency = 1
-    TitleText.Text = "VOIDHUB"
+    TitleText.Text = "PAINTHUB"
     TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
     TitleText.Font = Enum.Font.GothamBold
     TitleText.TextSize = 13
@@ -691,6 +691,18 @@ local success, err = pcall(function()
             warn(err)
         end
     end)
+    
+    CreateButton(ExecutorTab, "Load ppl", function()
+        local pplCode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/userguy484/VesoHub./refs/heads/main/ppl"))()'
+        local func, err = loadstring(pplCode)
+        if func then
+            pcall(func)
+            ShowBadge("ppl Loaded!", true)
+        else
+            ShowBadge("Failed to load ppl", false)
+            warn(err)
+        end
+    end)
 
     -- Settings Tab
     CreateToggle(SettingsTab, "GUI Cat Ears", true, function(v)
@@ -803,7 +815,7 @@ local success, err = pcall(function()
     MinButton.Size = UDim2.new(0, 50, 0, 50)
     MinButton.Position = UDim2.new(1, -70, 0, 20)
     MinButton.BackgroundColor3 = Settings.GuiColor
-    MinButton.Text = "VH"
+    MinButton.Text = "PH"
     MinButton.TextColor3 = Settings.AccentColor
     MinButton.Font = Enum.Font.GothamBold
     MinButton.TextSize = 16
@@ -1118,7 +1130,7 @@ RunService.RenderStepped:Connect(UpdateESP)
 -- INTRO ANIMATION
 -- ==========================================
 if success then
-    ShowBadge("VOIDHUB Loaded Successfully", true)
+    ShowBadge("PAINTHUB Loaded Successfully", true)
     
     local IntroFrame = Instance.new("Frame", ScreenGui)
     IntroFrame.Size = UDim2.new(0, 300, 0, 80)
@@ -1133,7 +1145,7 @@ if success then
     local IntroText = Instance.new("TextLabel", IntroFrame)
     IntroText.Size = UDim2.new(1, 0, 1, 0)
     IntroText.BackgroundTransparency = 1
-    IntroText.Text = "VOIDHUB"
+    IntroText.Text = "PAINTHUB"
     IntroText.TextColor3 = Settings.AccentColor
     IntroText.Font = Enum.Font.GothamBold
     IntroText.TextSize = 36
@@ -1148,6 +1160,6 @@ if success then
         textFade.Completed:Connect(function() IntroFrame:Destroy() end)
     end)
 else
-    ShowBadge("VOIDHUB Error! Check console.", false)
-    warn("VOIDHUB Load Error: " .. tostring(err))
+    ShowBadge("PAINTHUB Error! Check console.", false)
+    warn("PAINTHUB Load Error: " .. tostring(err))
 end
