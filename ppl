@@ -1,4 +1,4 @@
--- [K] PAINTHUB Custom GUI v23
+-- [K] PAINTHUB Custom GUI v24 (Removed ppl)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -688,18 +688,6 @@ local success, err = pcall(function()
             ShowBadge("sebb Loaded!", true)
         else
             ShowBadge("Failed to load sebb", false)
-            warn(err)
-        end
-    end)
-    
-    CreateButton(ExecutorTab, "Load ppl", function()
-        local pplCode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/userguy484/VesoHub./refs/heads/main/ppl"))()'
-        local func, err = loadstring(pplCode)
-        if func then
-            pcall(func)
-            ShowBadge("ppl Loaded!", true)
-        else
-            ShowBadge("Failed to load ppl", false)
             warn(err)
         end
     end)
