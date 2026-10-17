@@ -1,0 +1,1153 @@
+-- [K] VOIDHUB Custom GUI v21 (Fast Spin & Auclt Fling)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local isDestroyed = false
+local spinConnection = nil
+local rotationAngle = 0
+
+-- ==========================================
+-- SETTINGS STATE
+-- ==========================================
+local Settings = {
+    AccentColor = Color3.fromRGB(0, 255, 150),
+    ButtonColor = Color3.fromRGB(25, 25, 25),
+    GuiColor = Color3.fromRGB(15, 15, 15),
+    
+    ESP = { Box = false, Health = false, Bone = false, Tracker = false },
+    Player = { Speed = 16, Jump = 50, Fly = false, Noclip = false, GuiEars = true, TouchMove = false, AntiFling = false, SpinFast = false },
+    Aimbot = { Enabled = false, Smoothness = 0.25, TeamCheck = true }
+}
+
+local UIElements = { 
+    Toggles = {}, 
+    Sliders = {}, 
+    Tabs = {},
+    Frames = {},
+    GuiEars = {},
+    ColorSliders = {},
+    MinButton = nil,
+    ActiveTab = nil
+}
+
+-- ==========================================
+-- ERROR HANDLING & BADGE
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "VoidHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = game.CoreGui
+
+local function ShowBadge(titleText, isSuccess)
+    if isDestroyed then return end
+    local Badge = Instance.new("Frame")
+    Badge.Size = UDim2.new(0, 250, 0, 60)
+    Badge.Position = UDim2.new(1, 20, 1, -80)
+    Badge.BackgroundColor3 = Settings.GuiColor
+    Badge.BorderSizePixel = 0
+    Badge.Parent = ScreenGui
+    table.insert(UIElements.Frames, Badge)
+
+    local Corner = Instance.new("UICorner", Badge)
+    Corner.CornerRadius = UDim.new(0, 6)
+
+    local Accent = Instance.new("Frame", Badge)
+    Accent.Size = UDim2.new(0, 6, 1, 0)
+    Accent.BackgroundColor3 = isSuccess and Settings.AccentColor or Color3.fromRGB(255, 50, 50)
+    Accent.BorderSizePixel = 0
+    
+    local AccentCorner = Instance.new("UICorner", Accent)
+    AccentCorner.CornerRadius = UDim.new(0, 6)
+
+    local Title = Instance.new("TextLabel", Badge)
+    Title.Size = UDim2.new(1, -20, 1, 0)
+    Title.Position = UDim2.new(0, 15, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = titleText
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+
+    TweenService:Create(Badge, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(1, -270, 1, -80)}):Play()
+    task.delay(3, function()
+        if isDestroyed then return end
+        local outTween = TweenService:Create(Badge, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1, 20, 1, -80)})
+        outTween:Play()
+        outTween.Completed:Connect(function() Badge:Destroy() end)
+    end)
+end
+
+-- ==========================================
+-- DRAWINGS CLEANUP
+-- ==========================================
+local Drawings = {}
+local function CleanupDrawings(plr)
+    if Drawings[plr] then
+        for _, draw in pairs(Drawings[plr]) do
+            if type(draw) == "table" then
+                for _, d in pairs(draw) do
+                    if d and type(d.Remove) == "function" then
+                        pcall(function() d:Remove() end)
+                    end
+                end
+            else
+                if draw and type(draw.Remove) == "function" then
+                    pcall(function() draw:Remove() end)
+                end
+            end
+        end
+        Drawings[plr] = nil
+    end
+end
+
+Players.PlayerRemoving:Connect(function(plr)
+    CleanupDrawings(plr)
+end)
+
+-- ==========================================
+-- MOVE, SPIN & AUCLT FLING LOGIC
+-- ==========================================
+local function MovePlayer(plr)
+    if not plr or not plr.Character then return end
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        pcall(function()
+            hrp.CFrame = hrp.CFrame + Vector3.new(0, 1000, 0)
+        end)
+    end
+end
+
+local function AucltFling(plr)
+    if not plr or not plr.Character then return end
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        pcall(function()
+            local bv = Instance.new("BodyVelocity")
+            bv.Velocity = Vector3.new(9e9, 9e9, 9e9)
+            bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bv.Parent = hrp
+            
+            local bav = Instance.new("BodyAngularVelocity")
+            bav.AngularVelocity = Vector3.new(9e9, 9e9, 9e9)
+            bav.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bav.Parent = hrp
+            
+            task.delay(0.2, function()
+                if bv then bv:Destroy() end
+                if bav then bav:Destroy() end
+            end)
+        end)
+    end
+end
+
+local function UpdateSpin()
+    if spinConnection then
+        spinConnection:Disconnect()
+        spinConnection = nil
+    end
+    rotationAngle = 0
+
+    if Settings.Player.SpinFast and LocalPlayer.Character then
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hrp then
+            if hum then hum.AutoRotate = false end
+            spinConnection = RunService.RenderStepped:Connect(function(dt)
+                if not Settings.Player.SpinFast or not hrp.Parent or isDestroyed then return end
+                -- MUCH FASTER SPIN (100 radians per sec)
+                rotationAngle = rotationAngle + (dt * 100)
+                local pos = hrp.Position
+                hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, rotationAngle, 0)
+            end)
+        end
+    else
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.AutoRotate = true
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    UpdateSpin()
+end)
+
+local function GetClosestTarget()
+    local closest = nil
+    local dist = math.huge
+    local center = Camera.ViewportSize / 2
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character then
+            local head = v.Character:FindFirstChild("Head")
+            local hum = v.Character:FindFirstChild("Humanoid")
+            if head and hum and hum.Health > 0 then
+                if not Settings.Aimbot.TeamCheck or v.Team ~= LocalPlayer.Team then
+                    local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                    if onScreen and pos.Z > 0 then
+                        local mag = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                        if mag < dist then
+                            dist = mag
+                            closest = head
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+RunService.RenderStepped:Connect(function()
+    if isDestroyed then return end
+    
+    -- Anti-Fling Logic
+    if Settings.Player.AntiFling and LocalPlayer.Character then
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if hrp.AssemblyLinearVelocity.Magnitude > 500 then
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
+            if hrp.AssemblyAngularVelocity.Magnitude > 500 and not Settings.Player.SpinFast then
+                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end
+
+    -- Aimbot Logic
+    if Settings.Aimbot.Enabled and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local target = GetClosestTarget()
+        if target then
+            local currentCFrame = Camera.CFrame
+            local targetCFrame = CFrame.new(currentCFrame.Position, target.Position)
+            Camera.CFrame = currentCFrame:Lerp(targetCFrame, Settings.Aimbot.Smoothness)
+        end
+    end
+    
+    -- Touch Move Logic
+    if Settings.Player.TouchMove then
+        local localChar = LocalPlayer.Character
+        if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+            local myPos = localChar.HumanoidRootPart.Position
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
+                    if dist < 15 then
+                        MovePlayer(plr)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Keybind for Auclt Fling All (Press V)
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if isDestroyed or gpe then return end
+    if input.KeyCode == Enum.KeyCode.V then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                AucltFling(plr)
+            end
+        end
+        ShowBadge("Auclt Flinged Everyone (V)!", true)
+    end
+end)
+
+-- ==========================================
+-- UI BUILDER (Wrapped in pcall)
+-- ==========================================
+local success, err = pcall(function()
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 500, 0, 350)
+    MainFrame.Position = UDim2.new(0.5, -250, 0.5, -175)
+    MainFrame.BackgroundColor3 = Settings.GuiColor
+    MainFrame.BackgroundTransparency = 0.15
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = ScreenGui
+    table.insert(UIElements.Frames, MainFrame)
+
+    local UIScale = Instance.new("UIScale")
+    UIScale.Parent = MainFrame
+    if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+        UIScale.Scale = 0.65
+    end
+
+    local UICorner = Instance.new("UICorner", MainFrame)
+    UICorner.CornerRadius = UDim.new(0, 6)
+
+    -- GUI CAT EARS
+    local function CreateGuiEar(side)
+        local ear = Instance.new("ImageLabel", MainFrame)
+        ear.Size = UDim2.new(0, 40, 0, 50)
+        ear.Position = side == "left" and UDim2.new(0, 20, 0, -40) or UDim2.new(1, -60, 0, -40)
+        ear.BackgroundTransparency = 1
+        ear.Image = "rbxassetid://7742731541"
+        ear.ImageColor3 = Settings.GuiColor
+        ear.Rotation = side == "left" and -15 or 15
+        ear.ZIndex = 1
+        table.insert(UIElements.GuiEars, ear)
+    end
+    CreateGuiEar("left")
+    CreateGuiEar("right")
+
+    local TitleBar = Instance.new("Frame", MainFrame)
+    TitleBar.Size = UDim2.new(1, 0, 0, 35)
+    TitleBar.BackgroundColor3 = Settings.GuiColor
+    TitleBar.BackgroundTransparency = 0.2
+    TitleBar.BorderSizePixel = 0
+    TitleBar.ZIndex = 2
+    table.insert(UIElements.Frames, TitleBar)
+
+    local TitleCorner = Instance.new("UICorner", TitleBar)
+    TitleCorner.CornerRadius = UDim.new(0, 6)
+
+    local TitleFix = Instance.new("Frame", TitleBar)
+    TitleFix.Size = UDim2.new(1, 0, 0.5, 0)
+    TitleFix.Position = UDim2.new(0, 0, 0.5, 0)
+    TitleFix.BackgroundColor3 = Settings.GuiColor
+    TitleFix.BackgroundTransparency = 0.2
+    TitleFix.BorderSizePixel = 0
+    TitleFix.ZIndex = 2
+    table.insert(UIElements.Frames, TitleFix)
+
+    local TitleText = Instance.new("TextLabel", TitleBar)
+    TitleText.Size = UDim2.new(1, -80, 1, 0)
+    TitleText.Position = UDim2.new(0, 10, 0, 0)
+    TitleText.BackgroundTransparency = 1
+    TitleText.Text = "VOIDHUB"
+    TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleText.Font = Enum.Font.GothamBold
+    TitleText.TextSize = 13
+    TitleText.TextXAlignment = Enum.TextXAlignment.Left
+    TitleText.ZIndex = 3
+
+    local MinBtn = Instance.new("TextButton", TitleBar)
+    MinBtn.Size = UDim2.new(0, 30, 0, 35)
+    MinBtn.Position = UDim2.new(1, -60, 0, 0)
+    MinBtn.BackgroundTransparency = 1
+    MinBtn.Text = "—"
+    MinBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 14
+    MinBtn.ZIndex = 3
+
+    local CloseBtn = Instance.new("TextButton", TitleBar)
+    CloseBtn.Size = UDim2.new(0, 30, 0, 35)
+    CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+    CloseBtn.BackgroundTransparency = 1
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 14
+    CloseBtn.ZIndex = 3
+
+    local TabBar = Instance.new("Frame", MainFrame)
+    TabBar.Size = UDim2.new(0, 100, 1, -35)
+    TabBar.Position = UDim2.new(0, 0, 0, 35)
+    TabBar.BackgroundColor3 = Settings.GuiColor
+    TabBar.BackgroundTransparency = 0.4
+    TabBar.BorderSizePixel = 0
+    table.insert(UIElements.Frames, TabBar)
+
+    local TabLayout = Instance.new("UIListLayout", TabBar)
+    TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    TabLayout.Padding = UDim.new(0, 2)
+
+    local Pages = Instance.new("Frame", MainFrame)
+    Pages.Size = UDim2.new(1, -100, 1, -35)
+    Pages.Position = UDim2.new(0, 100, 0, 35)
+    Pages.BackgroundTransparency = 1
+    Pages.ClipsDescendants = true
+
+    local function CreateTab(name, order)
+        local Btn = Instance.new("TextButton", TabBar)
+        Btn.Size = UDim2.new(1, 0, 0, 35)
+        Btn.BackgroundTransparency = 1
+        Btn.Text = name
+        Btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+        Btn.Font = Enum.Font.Gotham
+        Btn.TextSize = 12
+        Btn.LayoutOrder = order
+        table.insert(UIElements.Tabs, Btn)
+
+        local Page = Instance.new("ScrollingFrame", Pages)
+        Page.Size = UDim2.new(1, 0, 1, 0)
+        Page.Position = UDim2.new(0, 0, 0, 0)
+        Page.BackgroundTransparency = 1
+        Page.BorderSizePixel = 0
+        Page.Visible = false
+        Page.ScrollBarThickness = 2
+
+        local Layout = Instance.new("UIListLayout", Page)
+        Layout.SortOrder = Enum.SortOrder.LayoutOrder
+        Layout.Padding = UDim.new(0, 5)
+        
+        local Padding = Instance.new("UIPadding", Page)
+        Padding.PaddingTop = UDim.new(0, 10)
+        Padding.PaddingLeft = UDim.new(0, 10)
+
+        Btn.MouseButton1Click:Connect(function()
+            UIElements.ActiveTab = Btn
+            for _, v in pairs(Pages:GetChildren()) do
+                if v:IsA("ScrollingFrame") and v.Visible then 
+                    v.Visible = false 
+                end
+            end
+            
+            Page.Position = UDim2.new(0.05, 0, 0, 0)
+            Page.Visible = true
+            TweenService:Create(Page, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 0, 0, 0)
+            }):Play()
+        end)
+        return Page
+    end
+
+    local EspTab = CreateTab("ESP", 1)
+    local PlayerTab = CreateTab("Player", 2)
+    local CombatTab = CreateTab("Combat", 3)
+    local ExecutorTab = CreateTab("Executor", 4)
+    local SettingsTab = CreateTab("Settings", 5)
+    local CreditsTab = CreateTab("Credits", 6)
+
+    -- Helpers
+    local function CreateToggle(parent, text, default, callback)
+        local Btn = Instance.new("TextButton", parent)
+        Btn.Size = UDim2.new(1, -10, 0, 30)
+        Btn.BackgroundColor3 = default and Settings.AccentColor or Settings.ButtonColor
+        Btn.Text = "  " .. text
+        Btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        Btn.Font = Enum.Font.Gotham
+        Btn.TextSize = 12
+        Btn.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local Corner = Instance.new("UICorner", Btn)
+        Corner.CornerRadius = UDim.new(0, 4)
+
+        UIElements.Toggles[Btn] = default
+        
+        Btn.MouseButton1Click:Connect(function()
+            local newState = not UIElements.Toggles[Btn]
+            UIElements.Toggles[Btn] = newState
+            Btn.BackgroundColor3 = newState and Settings.AccentColor or Settings.ButtonColor
+            callback(newState)
+        end)
+        return Btn
+    end
+
+    local function CreateSlider(parent, text, min, max, default, callback)
+        local Frame = Instance.new("Frame", parent)
+        Frame.Size = UDim2.new(1, -10, 0, 45)
+        Frame.BackgroundColor3 = Settings.ButtonColor
+        
+        local Corner = Instance.new("UICorner", Frame)
+        Corner.CornerRadius = UDim.new(0, 4)
+
+        local Label = Instance.new("TextLabel", Frame)
+        Label.Size = UDim2.new(1, -10, 0, 20)
+        Label.Position = UDim2.new(0, 10, 0, 5)
+        Label.BackgroundTransparency = 1
+        Label.Text = text .. ": " .. tostring(default)
+        Label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        Label.Font = Enum.Font.Gotham
+        Label.TextSize = 12
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+
+        local Bar = Instance.new("Frame", Frame)
+        Bar.Size = UDim2.new(1, -20, 0, 5)
+        Bar.Position = UDim2.new(0, 10, 0, 30)
+        Bar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        
+        local Fill = Instance.new("Frame", Bar)
+        Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+        Fill.BackgroundColor3 = Settings.AccentColor
+        
+        local sliderObj = {Frame = Frame, Fill = Fill, Label = Label, Text = text}
+        table.insert(UIElements.Sliders, sliderObj)
+
+        local dragging = false
+        Bar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local mouseX = UserInputService:GetMouseLocation().X
+                local percent = math.clamp((mouseX - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1)
+                Fill.Size = UDim2.new(percent, 0, 1, 0)
+                local val = math.floor(min + (max - min) * percent)
+                Label.Text = text .. ": " .. tostring(val)
+                callback(val)
+            end
+        end)
+        
+        UIElements.ColorSliders[text] = function(val)
+            local percent = (val - min) / (max - min)
+            Fill.Size = UDim2.new(percent, 0, 1, 0)
+            Label.Text = text .. ": " .. tostring(val)
+        end
+        
+        return Frame
+    end
+
+    local function CreateButton(parent, text, callback)
+        local Btn = Instance.new("TextButton", parent)
+        Btn.Size = UDim2.new(1, -10, 0, 30)
+        Btn.BackgroundColor3 = Settings.ButtonColor
+        Btn.Text = text
+        Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Btn.Font = Enum.Font.GothamBold
+        Btn.TextSize = 12
+        
+        local Corner = Instance.new("UICorner", Btn)
+        Corner.CornerRadius = UDim.new(0, 4)
+        UIElements.Toggles[Btn] = false 
+        
+        Btn.MouseButton1Click:Connect(callback)
+        return Btn
+    end
+
+    -- ESP Tab
+    CreateToggle(EspTab, "Box ESP", false, function(v) Settings.ESP.Box = v end)
+    CreateToggle(EspTab, "Health ESP", false, function(v) Settings.ESP.Health = v end)
+    CreateToggle(EspTab, "Bone ESP", false, function(v) Settings.ESP.Bone = v end)
+    CreateToggle(EspTab, "Tracker", false, function(v) Settings.ESP.Tracker = v end)
+
+    -- Player Tab
+    CreateToggle(PlayerTab, "Fly (WASD)", false, function(v)
+        Settings.Player.Fly = v
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        if v then
+            local bg = Instance.new("BodyGyro", hrp)
+            bg.P = 9e4
+            bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bg.CFrame = hrp.CFrame
+            local bv = Instance.new("BodyVelocity", hrp)
+            bv.Velocity = Vector3.new(0, 0, 0)
+            bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            local flyConn
+            flyConn = RunService.RenderStepped:Connect(function()
+                if not Settings.Player.Fly or not hrp.Parent or isDestroyed then
+                    bg:Destroy() bv:Destroy() flyConn:Disconnect() return
+                end
+                local camCF = Camera.CFrame
+                local moveDir = Vector3.new()
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camCF.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camCF.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camCF.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camCF.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                bv.Velocity = moveDir * Settings.Player.Speed * 3
+                bg.CFrame = camCF
+            end)
+        end
+    end)
+
+    CreateToggle(PlayerTab, "Noclip", false, function(v)
+        Settings.Player.Noclip = v
+        RunService.Stepped:Connect(function()
+            if isDestroyed then return end
+            if Settings.Player.Noclip and LocalPlayer.Character then
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+                end
+            end
+        end)
+    end)
+    
+    CreateToggle(PlayerTab, "Anti-Fling", false, function(v) Settings.Player.AntiFling = v end)
+    CreateToggle(PlayerTab, "Spin Fast", false, function(v) 
+        Settings.Player.SpinFast = v 
+        UpdateSpin()
+    end)
+
+    CreateSlider(PlayerTab, "WalkSpeed", 16, 300, 16, function(v)
+        Settings.Player.Speed = v
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = v
+        end
+    end)
+
+    CreateSlider(PlayerTab, "JumpPower", 50, 500, 50, function(v)
+        Settings.Player.Jump = v
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.UseJumpPower = true
+            LocalPlayer.Character.Humanoid.JumpPower = v
+        end
+    end)
+
+    -- Combat Tab
+    CreateToggle(CombatTab, "Aimbot (Hold Right Click)", false, function(v) Settings.Aimbot.Enabled = v end)
+    CreateToggle(CombatTab, "Team Check", true, function(v) Settings.Aimbot.TeamCheck = v end)
+    CreateSlider(CombatTab, "Aimbot Smoothness", 1, 100, 25, function(v) Settings.Aimbot.Smoothness = v / 100 end)
+    
+    CreateToggle(CombatTab, "Touch Move (1000 Studs)", false, function(v) Settings.Player.TouchMove = v end)
+    
+    CreateButton(CombatTab, "Auclt Fling Closest", function()
+        local targetHead = GetClosestTarget()
+        if targetHead then
+            local targetPlr = Players:GetPlayerFromCharacter(targetHead.Parent)
+            if targetPlr then
+                AucltFling(targetPlr)
+                ShowBadge("Auclt Flinged " .. targetPlr.Name .. "!", true)
+            end
+        else
+            ShowBadge("No target found.", false)
+        end
+    end)
+    
+    CreateButton(CombatTab, "Auclt Fling All (V)", function()
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                AucltFling(plr)
+            end
+        end
+        ShowBadge("Auclt Flinged Everyone!", true)
+    end)
+
+    -- Executor Tab
+    local ExecutorScroll = Instance.new("ScrollingFrame", ExecutorTab)
+    ExecutorScroll.Size = UDim2.new(1, -10, 0, 160)
+    ExecutorScroll.BackgroundColor3 = Settings.ButtonColor
+    ExecutorScroll.BorderSizePixel = 0
+    ExecutorScroll.ScrollBarThickness = 2
+    local ScrollCorner = Instance.new("UICorner", ExecutorScroll)
+    ScrollCorner.CornerRadius = UDim.new(0, 4)
+    table.insert(UIElements.Frames, ExecutorScroll)
+
+    local LineNumbers = Instance.new("TextLabel", ExecutorScroll)
+    LineNumbers.Size = UDim2.new(0, 25, 1, 0)
+    LineNumbers.Position = UDim2.new(0, 5, 0, 5)
+    LineNumbers.BackgroundTransparency = 1
+    LineNumbers.Text = "1"
+    LineNumbers.TextColor3 = Color3.fromRGB(100, 100, 100)
+    LineNumbers.Font = Enum.Font.Code
+    LineNumbers.TextSize = 12
+    LineNumbers.TextYAlignment = Enum.TextYAlignment.Top
+    LineNumbers.TextXAlignment = Enum.TextXAlignment.Right
+
+    local CodeBox = Instance.new("TextBox", ExecutorScroll)
+    CodeBox.Size = UDim2.new(1, -40, 1, 0)
+    CodeBox.Position = UDim2.new(0, 35, 0, 5)
+    CodeBox.BackgroundTransparency = 1
+    CodeBox.Text = ""
+    CodeBox.PlaceholderText = "-- Paste script here --"
+    CodeBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CodeBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    CodeBox.Font = Enum.Font.Code
+    CodeBox.TextSize = 12
+    CodeBox.TextXAlignment = Enum.TextXAlignment.Left
+    CodeBox.TextYAlignment = Enum.TextYAlignment.Top
+    CodeBox.MultiLine = true
+    CodeBox.ClearTextOnFocus = false
+
+    CodeBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local text = CodeBox.Text
+        local lines = 1
+        for _ in string.gmatch(text, "\n") do lines = lines + 1 end
+        local numText = ""
+        for i = 1, lines do numText = numText .. i .. "\n" end
+        LineNumbers.Text = numText
+        ExecutorScroll.CanvasSize = UDim2.new(0, 0, 0, lines * 15 + 10)
+    end)
+
+    CreateButton(ExecutorTab, "Execute Script", function()
+        local scriptToRun = CodeBox.Text
+        local func, err = loadstring(scriptToRun)
+        if func then
+            pcall(func)
+            ShowBadge("Script Executed!", true)
+        else
+            ShowBadge("Syntax Error!", false)
+            warn(err)
+        end
+    end)
+
+    CreateButton(ExecutorTab, "Load sebb", function()
+        local sebbCode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/userguy484/VesoHub./refs/heads/main/sebb"))()'
+        local func, err = loadstring(sebbCode)
+        if func then
+            pcall(func)
+            ShowBadge("sebb Loaded!", true)
+        else
+            ShowBadge("Failed to load sebb", false)
+            warn(err)
+        end
+    end)
+
+    -- Settings Tab
+    CreateToggle(SettingsTab, "GUI Cat Ears", true, function(v)
+        Settings.Player.GuiEars = v
+        for _, ear in pairs(UIElements.GuiEars) do ear.Visible = v end
+    end)
+
+    local prevColors = nil
+    CreateToggle(SettingsTab, "UwU Mode (Pink/Red)", false, function(v)
+        if v then
+            prevColors = {
+                Accent = Settings.AccentColor,
+                Button = Settings.ButtonColor,
+                Gui = Settings.GuiColor
+            }
+            Settings.AccentColor = Color3.fromRGB(255, 105, 180)
+            Settings.ButtonColor = Color3.fromRGB(60, 10, 20)    
+            Settings.GuiColor = Color3.fromRGB(20, 5, 10)       
+            
+            if UIElements.ColorSliders["Accent R"] then
+                UIElements.ColorSliders["Accent R"](255)
+                UIElements.ColorSliders["Accent G"](105)
+                UIElements.ColorSliders["Accent B"](180)
+                UIElements.ColorSliders["Btn R"](60)
+                UIElements.ColorSliders["Btn G"](10)
+                UIElements.ColorSliders["Btn B"](20)
+                UIElements.ColorSliders["GUI R"](20)
+                UIElements.ColorSliders["GUI G"](5)
+                UIElements.ColorSliders["GUI B"](10)
+            end
+        else
+            if prevColors then
+                Settings.AccentColor = prevColors.Accent
+                Settings.ButtonColor = prevColors.Button
+                Settings.GuiColor = prevColors.Gui
+                
+                if UIElements.ColorSliders["Accent R"] then
+                    UIElements.ColorSliders["Accent R"](math.floor(prevColors.Accent.R * 255))
+                    UIElements.ColorSliders["Accent G"](math.floor(prevColors.Accent.G * 255))
+                    UIElements.ColorSliders["Accent B"](math.floor(prevColors.Accent.B * 255))
+                    UIElements.ColorSliders["Btn R"](math.floor(prevColors.Button.R * 255))
+                    UIElements.ColorSliders["Btn G"](math.floor(prevColors.Button.G * 255))
+                    UIElements.ColorSliders["Btn B"](math.floor(prevColors.Button.B * 255))
+                    UIElements.ColorSliders["GUI R"](math.floor(prevColors.Gui.R * 255))
+                    UIElements.ColorSliders["GUI G"](math.floor(prevColors.Gui.G * 255))
+                    UIElements.ColorSliders["GUI B"](math.floor(prevColors.Gui.B * 255))
+                end
+            end
+        end
+    end)
+
+    local r, g, b = 0, 255, 150
+    local br, bg, bb = 25, 25, 25
+    local gr, gg, gb = 15, 15, 15
+    
+    CreateSlider(SettingsTab, "Accent R", 0, 255, 0, function(v) r = v; Settings.AccentColor = Color3.fromRGB(r, g, b); end)
+    CreateSlider(SettingsTab, "Accent G", 0, 255, 255, function(v) g = v; Settings.AccentColor = Color3.fromRGB(r, g, b); end)
+    CreateSlider(SettingsTab, "Accent B", 0, 255, 150, function(v) b = v; Settings.AccentColor = Color3.fromRGB(r, g, b); end)
+    
+    CreateSlider(SettingsTab, "Btn R", 0, 255, 25, function(v) br = v; Settings.ButtonColor = Color3.fromRGB(br, bg, bb); end)
+    CreateSlider(SettingsTab, "Btn G", 0, 255, 25, function(v) bg = v; Settings.ButtonColor = Color3.fromRGB(br, bg, bb); end)
+    CreateSlider(SettingsTab, "Btn B", 0, 255, 25, function(v) bb = v; Settings.ButtonColor = Color3.fromRGB(br, bg, bb); end)
+
+    CreateSlider(SettingsTab, "GUI R", 0, 255, 15, function(v) gr = v; Settings.GuiColor = Color3.fromRGB(gr, gg, gb); end)
+    CreateSlider(SettingsTab, "GUI G", 0, 255, 15, function(v) gg = v; Settings.GuiColor = Color3.fromRGB(gr, gg, gb); end)
+    CreateSlider(SettingsTab, "GUI B", 0, 255, 15, function(v) gb = v; Settings.GuiColor = Color3.fromRGB(gr, gg, gb); end)
+
+    -- Credits Tab
+    local CreditLabel = Instance.new("TextLabel", CreditsTab)
+    CreditLabel.Size = UDim2.new(1, -10, 0, 40)
+    CreditLabel.BackgroundTransparency = 1
+    CreditLabel.Text = "Made by: zeko_iscool"
+    CreditLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CreditLabel.Font = Enum.Font.GothamBold
+    CreditLabel.TextSize = 18
+    CreditLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    CreateButton(CreditsTab, "Copy Discord Link", function()
+        if setclipboard then
+            setclipboard("https://discord.gg/JyvrQS6p8")
+            ShowBadge("Copied Discord Link!", true)
+        else
+            ShowBadge("Executor missing setclipboard", false)
+        end
+    end)
+
+    -- Drag Logic
+    local dragging, dragStart, startPos
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    -- Create Floating Min Button
+    local MinButton = Instance.new("TextButton")
+    MinButton.Size = UDim2.new(0, 50, 0, 50)
+    MinButton.Position = UDim2.new(1, -70, 0, 20)
+    MinButton.BackgroundColor3 = Settings.GuiColor
+    MinButton.Text = "VH"
+    MinButton.TextColor3 = Settings.AccentColor
+    MinButton.Font = Enum.Font.GothamBold
+    MinButton.TextSize = 16
+    MinButton.Visible = false
+    MinButton.Active = true
+    MinButton.Draggable = true
+    MinButton.Parent = ScreenGui
+    UIElements.MinButton = MinButton
+    table.insert(UIElements.Frames, MinButton)
+
+    local MinBtnCorner = Instance.new("UICorner", MinButton)
+    MinBtnCorner.CornerRadius = UDim.new(0, 25)
+
+    -- Open/Close Logic
+    local function ToggleMenu(forceState)
+        local targetState = forceState ~= nil and forceState or not MainFrame.Visible
+        
+        if targetState then
+            MinButton.Visible = false
+            MainFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 0, 0, 0)
+            MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, 500, 0, 350),
+                Position = UDim2.new(0.5, -250, 0.5, -175)
+            }):Play()
+        else
+            local closeTween = TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 0)
+            })
+            closeTween:Play()
+            closeTween.Completed:Connect(function()
+                MainFrame.Visible = false
+                MinButton.Visible = true
+            end)
+        end
+    end
+
+    MinBtn.MouseButton1Click:Connect(function() ToggleMenu(false) end)
+    MinButton.MouseButton1Click:Connect(function() ToggleMenu(true) end)
+    UIElements.ToggleMenu = ToggleMenu
+
+    -- Confirmation Prompt & Smooth Exit
+    local ConfirmFrame = Instance.new("Frame", ScreenGui)
+    ConfirmFrame.Size = UDim2.new(0, 0, 0, 0)
+    ConfirmFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ConfirmFrame.BackgroundColor3 = Settings.GuiColor
+    ConfirmFrame.BorderSizePixel = 0
+    ConfirmFrame.Visible = false
+    ConfirmFrame.ZIndex = 50
+    table.insert(UIElements.Frames, ConfirmFrame)
+
+    local ConfirmCorner = Instance.new("UICorner", ConfirmFrame)
+    ConfirmCorner.CornerRadius = UDim.new(0, 6)
+
+    local ConfirmText = Instance.new("TextLabel", ConfirmFrame)
+    ConfirmText.Size = UDim2.new(1, 0, 0, 50)
+    ConfirmText.BackgroundTransparency = 1
+    ConfirmText.Text = "Are you sure you want to exit?"
+    ConfirmText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ConfirmText.Font = Enum.Font.GothamBold
+    ConfirmText.TextSize = 14
+    ConfirmText.ZIndex = 51
+
+    local YesBtn = Instance.new("TextButton", ConfirmFrame)
+    YesBtn.Size = UDim2.new(0, 100, 0, 30)
+    YesBtn.Position = UDim2.new(0, 15, 0, 60)
+    YesBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    YesBtn.Text = "Yes"
+    YesBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    YesBtn.Font = Enum.Font.GothamBold
+    YesBtn.ZIndex = 51
+
+    local NoBtn = Instance.new("TextButton", ConfirmFrame)
+    NoBtn.Size = UDim2.new(0, 100, 0, 30)
+    NoBtn.Position = UDim2.new(0, 135, 0, 60)
+    NoBtn.BackgroundColor3 = Settings.ButtonColor
+    NoBtn.Text = "No"
+    NoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NoBtn.Font = Enum.Font.GothamBold
+    NoBtn.ZIndex = 51
+    UIElements.Toggles[NoBtn] = false
+
+    -- Animate Prompt In
+    CloseBtn.MouseButton1Click:Connect(function()
+        ConfirmFrame.Visible = true
+        ConfirmFrame.Size = UDim2.new(0, 0, 0, 0)
+        ConfirmFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        TweenService:Create(ConfirmFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 250, 0, 100),
+            Position = UDim2.new(0.5, -125, 0.5, -50)
+        }):Play()
+    end)
+
+    -- Animate Prompt Out (No)
+    NoBtn.MouseButton1Click:Connect(function()
+        local tween = TweenService:Create(ConfirmFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0)
+        })
+        tween:Play()
+        tween.Completed:Connect(function() ConfirmFrame.Visible = false end)
+    end)
+    
+    -- Full Destruction (Yes)
+    YesBtn.MouseButton1Click:Connect(function()
+        isDestroyed = true
+        if spinConnection then spinConnection:Disconnect() end
+        
+        for plr, _ in pairs(Drawings) do
+            CleanupDrawings(plr)
+        end
+        
+        ScreenGui:Destroy()
+    end)
+
+    -- Set Default Tab
+    UIElements.ActiveTab = UIElements.Tabs[1]
+    EspTab.Visible = true
+end)
+
+-- ==========================================
+-- RIGHT SHIFT TOGGLE & UI COLOR UPDATER
+-- ==========================================
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if isDestroyed then return end
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        if UIElements.ToggleMenu then
+            UIElements.ToggleMenu()
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if isDestroyed then return end
+    
+    for _, tab in pairs(UIElements.Tabs) do
+        if tab == UIElements.ActiveTab then
+            tab.TextColor3 = Settings.AccentColor
+        else
+            tab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        end
+    end
+    
+    for btn, state in pairs(UIElements.Toggles) do
+        btn.BackgroundColor3 = state and Settings.AccentColor or Settings.ButtonColor
+    end
+
+    for _, slider in pairs(UIElements.Sliders) do
+        slider.Frame.BackgroundColor3 = Settings.ButtonColor
+        slider.Fill.BackgroundColor3 = Settings.AccentColor
+    end
+
+    for _, frame in pairs(UIElements.Frames) do
+        frame.BackgroundColor3 = Settings.GuiColor
+    end
+
+    for _, ear in pairs(UIElements.GuiEars) do
+        ear.ImageColor3 = Settings.GuiColor
+    end
+
+    if UIElements.MinButton then
+        UIElements.MinButton.BackgroundColor3 = Settings.GuiColor
+        UIElements.MinButton.TextColor3 = Settings.AccentColor
+    end
+end)
+
+-- ==========================================
+-- ESP RENDERER
+-- ==========================================
+local function CreateDrawing(class, props)
+    local obj = Drawing.new(class)
+    for k, v in pairs(props) do obj[k] = v end
+    obj.Visible = false
+    return obj
+end
+
+local function UpdateESP()
+    if isDestroyed then return end
+    
+    for plr, _ in pairs(Drawings) do
+        if not plr or not plr.Parent or not plr:IsDescendantOf(Players) then
+            CleanupDrawings(plr)
+        end
+    end
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then
+            if Drawings[plr] then CleanupDrawings(plr) end
+            continue
+        end
+        
+        local char = plr.Character
+        local hrp = char.HumanoidRootPart
+        local head = char:FindFirstChild("Head")
+        local humanoid = char:FindFirstChild("Humanoid")
+        
+        if not Drawings[plr] then
+            Drawings[plr] = {
+                Box = CreateDrawing("Square", {Thickness = 1, Filled = false}),
+                HealthBg = CreateDrawing("Square", {Thickness = 1, Filled = true, Color = Color3.fromRGB(50,50,50)}),
+                HealthBar = CreateDrawing("Square", {Thickness = 1, Filled = true}),
+                Name = CreateDrawing("Text", {Size = 14, Center = true, Outline = true}),
+                HealthText = CreateDrawing("Text", {Size = 12, Center = true, Outline = true}),
+                Tracker = CreateDrawing("Line", {Thickness = 1}),
+                Bones = {}
+            }
+        end
+        
+        local d = Drawings[plr]
+        
+        local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+        local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        local headPos = Camera:WorldToViewportPoint(head.Position)
+        local legPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.5, 0))
+        
+        local isVisible = onScreen and hrpPos.Z > 0 and headPos.Z > 0 and legPos.Z > 0 and distance < 500
+        
+        if isVisible then
+            if hrpPos.X < 0 or hrpPos.Y < 0 or hrpPos.X > Camera.ViewportSize.X or hrpPos.Y > Camera.ViewportSize.Y then
+                isVisible = false
+            else
+                local height = math.abs(headPos.Y - legPos.Y)
+                local width = height / 2
+                if height > 500 or width > 250 then isVisible = false end
+            end
+        end
+        
+        if isVisible and head and humanoid then
+            local height = math.abs(headPos.Y - legPos.Y)
+            local width = height / 2
+            
+            d.Box.Visible = Settings.ESP.Box
+            d.Box.Color = Settings.AccentColor
+            d.Box.Size = Vector2.new(width, height)
+            d.Box.Position = Vector2.new(hrpPos.X - width/2, headPos.Y)
+            
+            d.HealthBg.Visible = Settings.ESP.Health
+            d.HealthBar.Visible = Settings.ESP.Health
+            d.HealthText.Visible = Settings.ESP.Health
+            
+            local hp = humanoid.Health / humanoid.MaxHealth
+            local hHeight = height * hp
+            
+            d.HealthBg.Size = Vector2.new(3, height)
+            d.HealthBg.Position = Vector2.new(d.Box.Position.X - 6, d.Box.Position.Y)
+            d.HealthBar.Color = Color3.fromRGB(255 * (1-hp), 255 * hp, 0)
+            d.HealthBar.Size = Vector2.new(3, hHeight)
+            d.HealthBar.Position = Vector2.new(d.Box.Position.X - 6, d.Box.Position.Y + (height - hHeight))
+            
+            d.Name.Visible = Settings.ESP.Health
+            d.Name.Text = plr.Name
+            d.Name.Color = Settings.AccentColor
+            d.Name.Position = Vector2.new(hrpPos.X, d.Box.Position.Y - 18)
+            
+            d.HealthText.Visible = Settings.ESP.Health
+            d.HealthText.Text = math.floor(humanoid.Health) .. " HP"
+            d.HealthText.Color = Color3.fromRGB(255, 255, 255)
+            d.HealthText.Position = Vector2.new(hrpPos.X, d.Box.Position.Y + height + 12)
+            
+            d.Tracker.Visible = Settings.ESP.Tracker
+            d.Tracker.Color = Settings.AccentColor
+            d.Tracker.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+            d.Tracker.To = Vector2.new(hrpPos.X, d.Box.Position.Y + height)
+            
+            for _, bone in pairs(d.Bones) do bone.Visible = false end
+            if Settings.ESP.Bone then
+                local function drawBone(p1, p2)
+                    if not p1 or not p2 then return end
+                    local v1, on1 = Camera:WorldToViewportPoint(p1.Position)
+                    local v2, on2 = Camera:WorldToViewportPoint(p2.Position)
+                    if on1 and on2 and v1.Z > 0 and v2.Z > 0 then
+                        local line = d.Bones[p1.Name .. p2.Name] 
+                        if not line then
+                            line = CreateDrawing("Line", {Thickness = 1})
+                            d.Bones[p1.Name .. p2.Name] = line
+                        end
+                        line.Visible = true
+                        line.From = Vector2.new(v1.X, v1.Y)
+                        line.To = Vector2.new(v2.X, v2.Y)
+                        line.Color = Settings.AccentColor
+                    end
+                end
+                if char:FindFirstChild("UpperTorso") then
+                    drawBone(char.Head, char.UpperTorso); drawBone(char.UpperTorso, char.LowerTorso)
+                    drawBone(char.LowerTorso, char.LeftUpperLeg); drawBone(char.LeftUpperLeg, char.LeftLowerLeg)
+                    drawBone(char.LowerTorso, char.RightUpperLeg); drawBone(char.RightUpperLeg, char.RightLowerLeg)
+                    drawBone(char.UpperTorso, char.LeftUpperArm); drawBone(char.LeftUpperArm, char.LeftLowerArm)
+                    drawBone(char.UpperTorso, char.RightUpperArm); drawBone(char.RightUpperArm, char.RightLowerArm)
+                elseif char:FindFirstChild("Torso") then
+                    drawBone(char.Head, char.Torso); drawBone(char.Torso, char["Left Leg"]); drawBone(char.Torso, char["Right Leg"])
+                    drawBone(char.Torso, char["Left Arm"]); drawBone(char.Torso, char["Right Arm"])
+                end
+            end
+        else
+            d.Box.Visible = false
+            d.HealthBg.Visible = false
+            d.HealthBar.Visible = false
+            d.Name.Visible = false
+            d.HealthText.Visible = false
+            d.Tracker.Visible = false
+            for _, bone in pairs(d.Bones) do bone.Visible = false end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(UpdateESP)
+
+-- ==========================================
+-- INTRO ANIMATION
+-- ==========================================
+if success then
+    ShowBadge("VOIDHUB Loaded Successfully", true)
+    
+    local IntroFrame = Instance.new("Frame", ScreenGui)
+    IntroFrame.Size = UDim2.new(0, 300, 0, 80)
+    IntroFrame.Position = UDim2.new(0.5, -150, 0, 20)
+    IntroFrame.BackgroundColor3 = Settings.GuiColor
+    IntroFrame.BackgroundTransparency = 0
+    IntroFrame.ZIndex = 20
+    
+    local IntroCorner = Instance.new("UICorner", IntroFrame)
+    IntroCorner.CornerRadius = UDim.new(0, 6)
+    
+    local IntroText = Instance.new("TextLabel", IntroFrame)
+    IntroText.Size = UDim2.new(1, 0, 1, 0)
+    IntroText.BackgroundTransparency = 1
+    IntroText.Text = "VOIDHUB"
+    IntroText.TextColor3 = Settings.AccentColor
+    IntroText.Font = Enum.Font.GothamBold
+    IntroText.TextSize = 36
+    IntroText.ZIndex = 21
+    
+    task.delay(2, function()
+        if isDestroyed then return end
+        local fadeInfo = TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        TweenService:Create(IntroFrame, fadeInfo, {BackgroundTransparency = 1}):Play()
+        local textFade = TweenService:Create(IntroText, fadeInfo, {TextTransparency = 1})
+        textFade:Play()
+        textFade.Completed:Connect(function() IntroFrame:Destroy() end)
+    end)
+else
+    ShowBadge("VOIDHUB Error! Check console.", false)
+    warn("VOIDHUB Load Error: " .. tostring(err))
+end
