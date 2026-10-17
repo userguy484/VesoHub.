@@ -1,0 +1,2064 @@
+-- VesoHub v37 - Cat Ears Hide on Minimize
+-- For Solara Executor
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+getgenv().VesoHubSoundId = getgenv().VesoHubSoundId or "8679659744"
+getgenv().VesoHubUwUId = "8679659744"
+
+for _, name in ipairs({"VesoHub", "VesoDex", "VesoIntro", "VesoBadge", "VesoError", "VesoMini", "VesoCatEars", "VesoCursor"}) do
+    local g = CoreGui:FindFirstChild(name)
+    if g then g:Destroy() end
+end
+local espContainer = Camera:FindFirstChild("VesoESPContainer")
+if espContainer then espContainer:Destroy() end
+espContainer = Instance.new("Folder")
+espContainer.Name = "VesoESPContainer"
+espContainer.Parent = Camera
+
+local worldContainer = workspace:FindFirstChild("VesoWorldESP")
+if worldContainer then worldContainer:Destroy() end
+worldContainer = Instance.new("Folder")
+worldContainer.Name = "VesoWorldESP"
+worldContainer.Parent = workspace
+
+local tracerOrigin = Instance.new("Part")
+tracerOrigin.Name = "VesoTracerOrigin"
+tracerOrigin.Size = Vector3.new(0.1, 0.1, 0.1)
+tracerOrigin.Transparency = 1
+tracerOrigin.CanCollide = false
+tracerOrigin.Anchored = true
+tracerOrigin.CastShadow = false
+tracerOrigin.Parent = worldContainer
+
+local Theme = {
+    Accent = Color3.fromRGB(0, 255, 204),
+    AccentDark = Color3.fromRGB(0, 150, 120),
+    CatEars = false,
+    CustomCursor = false,
+    Design = "modern",
+    SoundId = getgenv().VesoHubSoundId,
+    UwUId = getgenv().VesoHubUwUId,
+}
+
+local AccentElements = {}
+local function registerAccent(obj, property)
+    table.insert(AccentElements, {obj = obj, prop = property or "BackgroundColor3"})
+end
+
+local function updateAccent()
+    for _, entry in ipairs(AccentElements) do
+        local obj = entry.obj
+        if obj and obj.Parent then
+            if entry.prop == "TextColor3" then obj.TextColor3 = Theme.Accent
+            elseif entry.prop == "BackgroundColor3" then obj.BackgroundColor3 = Theme.Accent
+            elseif entry.prop == "Color" then obj.Color = Theme.Accent
+            elseif entry.prop == "Color3" then obj.Color3 = Theme.Accent
+            elseif entry.prop == "ImageColor3" then obj.ImageColor3 = Theme.Accent
+            elseif entry.prop == "ScrollBarImageColor3" then obj.ScrollBarImageColor3 = Theme.Accent
+            end
+        end
+    end
+end
+
+local VesoHub = {
+    Connections = {},
+    ESPObjects = {},
+    Loop = { Enabled = false, SavedPosition = nil, MoveSpeed = 30 },
+    Animation = {
+        Active = false, Mode = "Spin", Parts = {}, OriginalCFrames = {},
+        Connection = nil, MoveConnection = nil, Time = 0, Speed = 1,
+        Effects = false, EffectsInstances = {}, Origin = Vector3.new(0, 0, 0),
+    },
+    Settings = {
+        ESP = false, ESPBox = true, ESPHealth = true, ESPName = true,
+        ESPTracers = true, ESPBone = true, TeamCheck = true,
+    }
+}
+
+local errorGui
+local errorY = 0
+
+local function showErrorBadge(msg)
+    msg = tostring(msg or "unknown error")
+    if #msg > 80 then msg = msg:sub(1, 77) .. "..." end
+    if not errorGui or not errorGui.Parent then
+        errorGui = Instance.new("ScreenGui")
+        errorGui.Name = "VesoError"
+        errorGui.ResetOnSpawn = false
+        errorGui.IgnoreGuiInset = true
+        errorGui.DisplayOrder = 1000
+        errorGui.Parent = CoreGui
+    end
+    local slot = errorY
+    errorY = errorY + 1
+    local toast = Instance.new("Frame")
+    toast.Size = UDim2.new(0, 300, 0, 52)
+    toast.Position = UDim2.new(1, -320, 0, 60 + slot * 60)
+    toast.BackgroundColor3 = Color3.fromRGB(30, 15, 18)
+    toast.BorderSizePixel = 0
+    toast.Parent = errorGui
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 10)
+    c.Parent = toast
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 4, 1, 0)
+    accent.BackgroundColor3 = Color3.fromRGB(255, 60, 80)
+    accent.BorderSizePixel = 0
+    accent.Parent = toast
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 34, 0, 34)
+    icon.Position = UDim2.new(0, 18, 0.5, -17)
+    icon.BackgroundColor3 = Color3.fromRGB(200, 40, 60)
+    icon.Text = "!"
+    icon.TextColor3 = Color3.fromRGB(255, 255, 255)
+    icon.Font = Enum.Font.GothamBold
+    icon.TextSize = 22
+    icon.BorderSizePixel = 0
+    icon.Parent = toast
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -70, 0, 20)
+    title.Position = UDim2.new(0, 62, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Text = "VesoHub Error"
+    title.TextColor3 = Color3.fromRGB(255, 150, 160)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = toast
+    local body = Instance.new("TextLabel")
+    body.Size = UDim2.new(1, -70, 0, 18)
+    body.Position = UDim2.new(0, 62, 0, 26)
+    body.BackgroundTransparency = 1
+    body.Text = msg
+    body.TextColor3 = Color3.fromRGB(200, 180, 185)
+    body.Font = Enum.Font.Gotham
+    body.TextSize = 11
+    body.TextXAlignment = Enum.TextXAlignment.Left
+    body.Parent = toast
+    TweenService:Create(toast, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(1, -320, 0, 60 + slot * 60),
+    }):Play()
+    task.delay(6, function()
+        TweenService:Create(toast, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(1, -20, 0, 60 + slot * 60),
+        }):Play()
+        task.wait(0.4)
+        toast:Destroy()
+        errorY = math.max(0, errorY - 1)
+    end)
+end
+
+local function safe(fn, label)
+    return function(...)
+        local ok, err = pcall(fn, ...)
+        if not ok then
+            warn("[VesoHub] " .. tostring(label) .. ": " .. tostring(err))
+            task.spawn(showErrorBadge, tostring(err))
+        end
+    end
+end
+
+local activeSounds = {}
+
+local function playSoundId(id)
+    if not id or id == "" then return end
+    id = tostring(id):gsub("%D", "")
+    if id == "" then return end
+    local assetUrl = "rbxassetid://" .. id
+    for _, s in pairs(activeSounds) do
+        pcall(function() s:Stop() s:Destroy() end)
+    end
+    activeSounds = {}
+    local s = Instance.new("Sound")
+    s.Name = "VesoPlaySound"
+    s.SoundId = assetUrl
+    s.Volume = 2
+    s.PlayOnRemove = false
+    s.Looped = false
+    s.Parent = SoundService
+    table.insert(activeSounds, s)
+    task.spawn(function()
+        pcall(function() ContentProvider:PreloadAsync({s}) end)
+        task.wait(0.08)
+        pcall(function() s:Play() end)
+    end)
+    s.Ended:Connect(function()
+        if s then s:Destroy() end
+    end)
+    task.delay(60, function()
+        if s and s.Parent then s:Destroy() end
+    end)
+end
+
+local function playClickSound()
+    playSoundId(Theme.SoundId)
+end
+
+local function playOpenSound()
+    playSoundId(Theme.SoundId)
+end
+
+-- ============ CUSTOM CURSOR (pure ball) ============
+local cursorGui = nil
+local cursorBall = nil
+
+local function setCustomCursor(on)
+    Theme.CustomCursor = on
+    if on then
+        if not cursorGui then
+            cursorGui = Instance.new("ScreenGui")
+            cursorGui.Name = "VesoCursor"
+            cursorGui.ResetOnSpawn = false
+            cursorGui.IgnoreGuiInset = true
+            cursorGui.DisplayOrder = 5000
+            cursorGui.Parent = CoreGui
+
+            cursorBall = Instance.new("Frame")
+            cursorBall.Size = UDim2.new(0, 16, 0, 16)
+            cursorBall.BackgroundColor3 = Theme.Accent
+            cursorBall.BorderSizePixel = 0
+            cursorBall.Parent = cursorGui
+            local cb = Instance.new("UICorner")
+            cb.CornerRadius = UDim.new(1, 0)
+            cb.Parent = cursorBall
+            registerAccent(cursorBall, "BackgroundColor3")
+        else
+            cursorGui.Enabled = true
+        end
+        pcall(function() UserInputService.MouseIconEnabled = false end)
+    else
+        if cursorGui then cursorGui.Enabled = false end
+        pcall(function() UserInputService.MouseIconEnabled = true end)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if Theme.CustomCursor and cursorBall and cursorBall.Parent then
+        local m = UserInputService:GetMouseLocation()
+        cursorBall.Position = UDim2.new(0, m.X - 8, 0, m.Y - 8)
+    end
+end)
+
+-- ============ INTRO ============
+local function showIntro()
+    local introGui = Instance.new("ScreenGui")
+    introGui.Name = "VesoIntro"
+    introGui.ResetOnSpawn = false
+    introGui.IgnoreGuiInset = true
+    introGui.DisplayOrder = 999
+    introGui.Parent = CoreGui
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    bg.BackgroundTransparency = 1
+    bg.BorderSizePixel = 0
+    bg.Parent = introGui
+    local center = Instance.new("Frame")
+    center.Size = UDim2.new(0, 500, 0, 300)
+    center.Position = UDim2.new(0.5, -250, 0.5, -150)
+    center.BackgroundTransparency = 1
+    center.Parent = introGui
+    local playBox = Instance.new("Frame")
+    playBox.Size = UDim2.new(0, 0, 0, 0)
+    playBox.Position = UDim2.new(0.5, 0, 0.4, 0)
+    playBox.AnchorPoint = Vector2.new(0.5, 0.5)
+    playBox.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    playBox.BorderSizePixel = 0
+    playBox.BackgroundTransparency = 1
+    playBox.Parent = center
+    local pc = Instance.new("UICorner")
+    pc.CornerRadius = UDim.new(0, 20)
+    pc.Parent = playBox
+    local triangle = Instance.new("ImageLabel")
+    triangle.Size = UDim2.new(0, 60, 0, 60)
+    triangle.Position = UDim2.new(0.5, -30, 0.5, -30)
+    triangle.BackgroundTransparency = 1
+    triangle.Image = "rbxassetid://3926305904"
+    triangle.ImageRectOffset = Vector2.new(964, 4)
+    triangle.ImageRectSize = Vector2.new(36, 36)
+    triangle.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    triangle.ImageTransparency = 1
+    triangle.Parent = playBox
+    local ytText = Instance.new("TextLabel")
+    ytText.Size = UDim2.new(1, 0, 0, 60)
+    ytText.Position = UDim2.new(0, 0, 0.4, 60)
+    ytText.BackgroundTransparency = 1
+    ytText.Text = "VesoHub"
+    ytText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ytText.Font = Enum.Font.GothamBold
+    ytText.TextSize = 52
+    ytText.TextTransparency = 1
+    ytText.Parent = center
+    local subText = Instance.new("TextLabel")
+    subText.Size = UDim2.new(1, 0, 0, 24)
+    subText.Position = UDim2.new(0, 0, 0.4, 115)
+    subText.BackgroundTransparency = 1
+    subText.Text = "loading  •  v37"
+    subText.TextColor3 = Color3.fromRGB(150, 150, 150)
+    subText.Font = Enum.Font.Gotham
+    subText.TextSize = 16
+    subText.TextTransparency = 1
+    subText.Parent = center
+    TweenService:Create(bg, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
+    task.wait(0.2)
+    TweenService:Create(playBox, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 180, 0, 100), BackgroundTransparency = 0,
+    }):Play()
+    TweenService:Create(triangle, TweenInfo.new(0.4), {ImageTransparency = 0}):Play()
+    task.wait(0.9)
+    TweenService:Create(playBox, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 100, 0, 70),
+    }):Play()
+    TweenService:Create(ytText, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+    TweenService:Create(subText, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+    task.wait(1.4)
+    TweenService:Create(bg, TweenInfo.new(0.6), {BackgroundTransparency = 1}):Play()
+    TweenService:Create(playBox, TweenInfo.new(0.5), {BackgroundTransparency = 1, Size = UDim2.new(0, 60, 0, 40)}):Play()
+    TweenService:Create(triangle, TweenInfo.new(0.5), {ImageTransparency = 1}):Play()
+    TweenService:Create(ytText, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+    TweenService:Create(subText, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+    task.wait(0.7)
+    introGui:Destroy()
+end
+
+local function showLoadedBadge()
+    local badgeGui = Instance.new("ScreenGui")
+    badgeGui.Name = "VesoBadge"
+    badgeGui.ResetOnSpawn = false
+    badgeGui.IgnoreGuiInset = true
+    badgeGui.DisplayOrder = 998
+    badgeGui.Parent = CoreGui
+    local badge = Instance.new("Frame")
+    badge.Size = UDim2.new(0, 260, 0, 60)
+    badge.Position = UDim2.new(1, -280, 0, 20)
+    badge.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    badge.BorderSizePixel = 0
+    badge.Parent = badgeGui
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(0, 10)
+    bc.Parent = badge
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 4, 1, 0)
+    accent.BackgroundColor3 = Theme.Accent
+    accent.BorderSizePixel = 0
+    accent.Parent = badge
+    local check = Instance.new("Frame")
+    check.Size = UDim2.new(0, 34, 0, 34)
+    check.Position = UDim2.new(0, 18, 0.5, -17)
+    check.BackgroundColor3 = Theme.AccentDark
+    check.BorderSizePixel = 0
+    check.Parent = badge
+    local cc = Instance.new("UICorner")
+    cc.CornerRadius = UDim.new(1, 0)
+    cc.Parent = check
+    local cm = Instance.new("TextLabel")
+    cm.Size = UDim2.new(1, 0, 1, 0)
+    cm.BackgroundTransparency = 1
+    cm.Text = "✓"
+    cm.TextColor3 = Color3.fromRGB(255, 255, 255)
+    cm.Font = Enum.Font.GothamBold
+    cm.TextSize = 22
+    cm.Parent = check
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -70, 0, 22)
+    title.Position = UDim2.new(0, 62, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "VesoHub Loaded"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = badge
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, -70, 0, 18)
+    sub.Position = UDim2.new(0, 62, 0, 30)
+    sub.BackgroundTransparency = 1
+    sub.Text = "RightShift to toggle"
+    sub.TextColor3 = Color3.fromRGB(150, 150, 150)
+    sub.Font = Enum.Font.Gotham
+    sub.TextSize = 12
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.Parent = badge
+    TweenService:Create(badge, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(1, -280, 0, 20),
+    }):Play()
+    task.delay(4, function()
+        TweenService:Create(badge, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(1, -20, 0, 20),
+        }):Play()
+        task.wait(0.5)
+        badgeGui:Destroy()
+    end)
+end
+
+safe(showIntro, "intro")()
+
+-- ============ UI HELPERS ============
+local function createCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 6)
+    c.Parent = parent
+end
+
+local function createToggle(parent, text, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 32)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    frame.BackgroundTransparency = 0.5
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    createCorner(frame, 6)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 50, 0, 22)
+    btn.Position = UDim2.new(1, -60, 0.5, -11)
+    btn.BackgroundColor3 = default and Theme.AccentDark or Color3.fromRGB(60, 60, 60)
+    btn.Text = default and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.BorderSizePixel = 0
+    btn.Parent = frame
+    createCorner(btn, 4)
+    local state = default
+    btn.MouseButton1Click:Connect(safe(function()
+        state = not state
+        btn.Text = state and "ON" or "OFF"
+        btn.BackgroundColor3 = state and Theme.AccentDark or Color3.fromRGB(60, 60, 60)
+        playClickSound()
+        callback(state)
+    end, "toggle " .. text))
+    return frame
+end
+
+local function createSlider(parent, text, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    frame.BackgroundTransparency = 0.5
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    createCorner(frame, 6)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0, 20)
+    label.Position = UDim2.new(0, 10, 0, 2)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": " .. tostring(default)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    local barBg = Instance.new("Frame")
+    barBg.Size = UDim2.new(1, -20, 0, 8)
+    barBg.Position = UDim2.new(0, 10, 0, 30)
+    barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    barBg.BorderSizePixel = 0
+    barBg.Parent = frame
+    createCorner(barBg, 4)
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Accent
+    fill.BorderSizePixel = 0
+    fill.Parent = barBg
+    createCorner(fill, 4)
+    registerAccent(fill, "BackgroundColor3")
+    local knob = Instance.new("TextButton")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = UDim2.new(fill.Size.X.Scale, -8, 0.5, -8)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Text = ""
+    knob.BorderSizePixel = 0
+    knob.Parent = barBg
+    createCorner(knob, 8)
+    local dragging = false
+    local function updateFromMouse(mx)
+        local rel = math.clamp((mx - barBg.AbsolutePosition.X) / barBg.AbsoluteSize.X, 0, 1)
+        local val = min + (max - min) * rel
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+        knob.Position = UDim2.new(rel, -8, 0.5, -8)
+        label.Text = text .. ": " .. string.format("%.2f", val)
+        callback(val)
+    end
+    knob.MouseButton1Down:Connect(safe(function() dragging = true end, "slider down"))
+    UserInputService.InputChanged:Connect(safe(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateFromMouse(input.Position.X)
+        end
+    end, "slider move"))
+    UserInputService.InputEnded:Connect(safe(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if dragging then playClickSound() end
+            dragging = false
+        end
+    end, "slider up"))
+    return frame
+end
+
+local function createButton(parent, text, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 35)
+    btn.BackgroundColor3 = color or Theme.AccentDark
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.BorderSizePixel = 0
+    btn.Parent = parent
+    createCorner(btn, 6)
+    btn.MouseButton1Click:Connect(safe(function()
+        playClickSound()
+        callback()
+    end, "button " .. text))
+    return btn
+end
+
+local function makeTabScroll(parent)
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, 0, 1, 0)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 4
+    scroll.ScrollBarImageColor3 = Theme.Accent
+    scroll.Parent = parent
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = scroll
+    local pad = Instance.new("UIPadding")
+    pad.PaddingRight = UDim.new(0, 6)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = scroll
+    return scroll
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "VesoHub"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 100
+screenGui.Parent = CoreGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 620, 0, 440)
+mainFrame.Position = UDim2.new(0.5, -310, 0.5, -220)
+mainFrame.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.ClipsDescendants = false
+mainFrame.Parent = screenGui
+createCorner(mainFrame, 8)
+
+-- ============ CAT EARS (old tilty design) ============
+local catEarsGui = Instance.new("ScreenGui")
+catEarsGui.Name = "VesoCatEars"
+catEarsGui.ResetOnSpawn = false
+catEarsGui.IgnoreGuiInset = true
+catEarsGui.DisplayOrder = 99
+catEarsGui.Enabled = false
+catEarsGui.Parent = CoreGui
+
+local catEarsFollow = Instance.new("Frame")
+catEarsFollow.Size = UDim2.new(0, 620, 0, 50)
+catEarsFollow.Position = UDim2.new(0.5, -310, 0.5, -245)
+catEarsFollow.BackgroundTransparency = 1
+catEarsFollow.Parent = catEarsGui
+
+local leftEarOuter = Instance.new("Frame")
+leftEarOuter.Size = UDim2.new(0, 40, 0, 45)
+leftEarOuter.Position = UDim2.new(0, 30, 0, 0)
+leftEarOuter.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
+leftEarOuter.BorderSizePixel = 0
+leftEarOuter.Rotation = -12
+leftEarOuter.Parent = catEarsFollow
+local leoCorner = Instance.new("UICorner")
+leoCorner.CornerRadius = UDim.new(0, 6)
+leoCorner.Parent = leftEarOuter
+
+local leftEarInner = Instance.new("Frame")
+leftEarInner.Size = UDim2.new(0, 22, 0, 26)
+leftEarInner.Position = UDim2.new(0.5, -11, 0.5, 2)
+leftEarInner.BackgroundColor3 = Theme.Accent
+leftEarInner.BorderSizePixel = 0
+leftEarInner.Parent = leftEarOuter
+createCorner(leftEarInner, 4)
+registerAccent(leftEarInner, "BackgroundColor3")
+
+local rightEarOuter = Instance.new("Frame")
+rightEarOuter.Size = UDim2.new(0, 40, 0, 45)
+rightEarOuter.Position = UDim2.new(1, -70, 0, 0)
+rightEarOuter.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
+rightEarOuter.BorderSizePixel = 0
+rightEarOuter.Rotation = 12
+rightEarOuter.Parent = catEarsFollow
+local reoCorner = Instance.new("UICorner")
+reoCorner.CornerRadius = UDim.new(0, 6)
+reoCorner.Parent = rightEarOuter
+
+local rightEarInner = Instance.new("Frame")
+rightEarInner.Size = UDim2.new(0, 22, 0, 26)
+rightEarInner.Position = UDim2.new(0.5, -11, 0.5, 2)
+rightEarInner.BackgroundColor3 = Theme.Accent
+rightEarInner.BorderSizePixel = 0
+rightEarInner.Parent = rightEarOuter
+createCorner(rightEarInner, 4)
+registerAccent(rightEarInner, "BackgroundColor3")
+
+local function updateEarsPos()
+    if not mainFrame or not mainFrame.Parent then return end
+    catEarsFollow.Position = UDim2.new(
+        mainFrame.Position.X.Scale,
+        mainFrame.Position.X.Offset,
+        mainFrame.Position.Y.Scale,
+        mainFrame.Position.Y.Offset - 28
+    )
+end
+
+mainFrame:GetPropertyChangedSignal("Position"):Connect(safe(updateEarsPos, "ears follow"))
+
+local function setCatEars(on)
+    Theme.CatEars = on
+    -- only show ears if NOT minimized
+    if on and not isMinimizedGlobal then
+        catEarsGui.Enabled = true
+        updateEarsPos()
+    else
+        catEarsGui.Enabled = false
+    end
+end
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+titleBar.BackgroundTransparency = 0.3
+titleBar.BorderSizePixel = 0
+titleBar.Active = false
+titleBar.Parent = mainFrame
+createCorner(titleBar, 8)
+
+local titleFix = Instance.new("Frame")
+titleFix.Size = UDim2.new(1, 0, 0, 10)
+titleFix.Position = UDim2.new(0, 0, 1, -10)
+titleFix.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+titleFix.BackgroundTransparency = 0.3
+titleFix.BorderSizePixel = 0
+titleFix.Active = false
+titleFix.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -180, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "VesoHub v37  [RShift = toggle]"
+titleLabel.TextColor3 = Theme.Accent
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 13
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+registerAccent(titleLabel, "TextColor3")
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 30, 0, 20)
+minBtn.Position = UDim2.new(1, -40, 0, 5)
+minBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+minBtn.BackgroundTransparency = 0.5
+minBtn.Text = "—"
+minBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 14
+minBtn.BorderSizePixel = 0
+minBtn.Parent = titleBar
+createCorner(minBtn, 4)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 20)
+closeBtn.Position = UDim2.new(1, -75, 0, 5)
+closeBtn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
+closeBtn.BackgroundTransparency = 0.5
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 150, 150)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 12
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+createCorner(closeBtn, 4)
+
+local tabContainer = Instance.new("Frame")
+tabContainer.Size = UDim2.new(0, 110, 1, -50)
+tabContainer.Position = UDim2.new(0, 10, 0, 40)
+tabContainer.BackgroundTransparency = 1
+tabContainer.Parent = mainFrame
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.Padding = UDim.new(0, 5)
+tabLayout.Parent = tabContainer
+
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, -140, 1, -50)
+contentContainer.Position = UDim2.new(0, 130, 0, 40)
+contentContainer.BackgroundTransparency = 1
+contentContainer.ClipsDescendants = true
+contentContainer.Parent = mainFrame
+
+local mainRoot = Instance.new("Frame")
+mainRoot.Size = UDim2.new(1, 0, 1, 0)
+mainRoot.BackgroundTransparency = 1
+mainRoot.Parent = contentContainer
+
+local espRoot = Instance.new("Frame")
+espRoot.Size = UDim2.new(1, 0, 1, 0)
+espRoot.BackgroundTransparency = 1
+espRoot.Visible = false
+espRoot.Parent = contentContainer
+
+local animRoot = Instance.new("Frame")
+animRoot.Size = UDim2.new(1, 0, 1, 0)
+animRoot.BackgroundTransparency = 1
+animRoot.Visible = false
+animRoot.Parent = contentContainer
+
+local execRoot = Instance.new("Frame")
+execRoot.Size = UDim2.new(1, 0, 1, 0)
+execRoot.BackgroundTransparency = 1
+execRoot.Visible = false
+execRoot.Parent = contentContainer
+
+local settingsRoot = Instance.new("Frame")
+settingsRoot.Size = UDim2.new(1, 0, 1, 0)
+settingsRoot.BackgroundTransparency = 1
+settingsRoot.Visible = false
+settingsRoot.Parent = contentContainer
+
+local allTabs = {mainRoot, espRoot, animRoot, execRoot, settingsRoot}
+
+local tabButtons = {}
+local function createTab(name, targetFrame)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    btn.BackgroundTransparency = 0.5
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.BorderSizePixel = 0
+    btn.Parent = tabContainer
+    createCorner(btn, 6)
+    table.insert(tabButtons, btn)
+    btn.MouseButton1Click:Connect(safe(function()
+        playClickSound()
+        for _, f in pairs(allTabs) do f.Visible = false end
+        targetFrame.Visible = true
+        for _, child in pairs(tabButtons) do
+            child.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            child.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
+        btn.BackgroundColor3 = Theme.AccentDark
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end, "tab " .. name))
+    return btn
+end
+
+local firstTab = createTab("Main", mainRoot)
+firstTab.BackgroundColor3 = Theme.AccentDark
+firstTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+createTab("ESP", espRoot)
+createTab("Animation", animRoot)
+createTab("Executor", execRoot)
+createTab("Settings", settingsRoot)
+
+-- Main tab
+local mainScroll = makeTabScroll(mainRoot)
+local flyActive = false
+local flyConnection, flyBodyVel, flyGyro
+createToggle(mainScroll, "Fly (WASD + Space/Ctrl)", false, function(state)
+    flyActive = state
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not humanoid then return end
+    if state then
+        humanoid.PlatformStand = true
+        flyBodyVel = Instance.new("BodyVelocity")
+        flyBodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        flyBodyVel.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVel.Parent = hrp
+        flyGyro = Instance.new("BodyGyro")
+        flyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        flyGyro.P = 1000
+        flyGyro.D = 50
+        flyGyro.Parent = hrp
+        flyConnection = RunService.RenderStepped:Connect(function()
+            if not flyActive then return end
+            local cam = workspace.CurrentCamera
+            local move = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+            flyBodyVel.Velocity = move.Magnitude > 0 and move * 60 or Vector3.new(0, 0, 0)
+            flyGyro.CFrame = cam.CFrame
+        end)
+    else
+        if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+        if flyBodyVel then flyBodyVel:Destroy() flyBodyVel = nil end
+        if flyGyro then flyGyro:Destroy() flyGyro = nil end
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end)
+
+local noclipActive = false
+local noclipConnection
+createToggle(mainScroll, "Noclip", false, function(state)
+    noclipActive = state
+    if state then
+        noclipConnection = RunService.Stepped:Connect(function()
+            if not noclipActive then return end
+            local c = LocalPlayer.Character
+            if not c then return end
+            for _, part in pairs(c:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end)
+    else
+        if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+        local c = LocalPlayer.Character
+        if c then
+            for _, part in pairs(c:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end)
+
+createToggle(mainScroll, "WalkSpeed (50)", false, function(state)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").WalkSpeed = state and 50 or 16
+    end
+end)
+
+createToggle(mainScroll, "JumpPower (100)", false, function(state)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").JumpPower = state and 100 or 50
+    end
+end)
+
+-- ESP tab
+local espScroll = makeTabScroll(espRoot)
+
+local BONE_R15 = {
+    {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
+    {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
+    {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
+    {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
+    {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"},
+}
+local BONE_R6 = {
+    {"Head", "Torso"}, {"Torso", "Left Arm"}, {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"}, {"Torso", "Right Leg"},
+}
+
+local function getBoneConnections(rigType)
+    if rigType == "R15" then return BONE_R15 else return BONE_R6 end
+end
+
+local function findPart(char, name)
+    if not char then return nil end
+    local direct = char:FindFirstChild(name)
+    if direct and direct:IsA("BasePart") then return direct end
+    for _, d in pairs(char:GetDescendants()) do
+        if d.Name == name and d:IsA("BasePart") then return d end
+    end
+    return nil
+end
+
+local function makeLine(partA, partB, color, thickness)
+    if not partA or not partB then return nil end
+    local line = Instance.new("LineHandleAdornment")
+    line.Adornee = partA
+    line.Thickness = thickness or 2
+    line.Color3 = color or Theme.Accent
+    line.Transparency = 0.15
+    line.AlwaysOnTop = true
+    line.ZIndex = 999
+    line.Length = 1
+    line.Parent = worldContainer
+    return {line = line, partA = partA, partB = partB}
+end
+
+local function updateLine(data)
+    if not data or not data.line or not data.line.Parent then return end
+    local pA = data.partA
+    local pB = data.partB
+    if not pA or not pA.Parent or not pB or not pB.Parent then return end
+    local worldDir = pB.Position - pA.Position
+    local length = worldDir.Magnitude
+    if length < 0.05 then return end
+    local localDir = pA.CFrame:VectorToObjectSpace(worldDir.Unit)
+    data.line.CFrame = CFrame.lookAt(Vector3.zero, localDir)
+    data.line.Length = length
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    if VesoHub.ESPObjects[player] then return end
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not head or not humanoid then return end
+
+    local data = {NameGui = nil, BoxGui = nil, HealthGui = nil, HealthBar = nil, Tracer = nil, Bones = {}}
+
+    local nameGui = Instance.new("BillboardGui")
+    nameGui.Size = UDim2.new(0, 200, 0, 20)
+    nameGui.StudsOffsetWorldSpace = Vector3.new(0, 3.5, 0)
+    nameGui.AlwaysOnTop = true
+    nameGui.Adornee = hrp
+    nameGui.Parent = espContainer
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 1, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = player.Name
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.Parent = nameGui
+    data.NameGui = nameGui
+
+    local boxGui = Instance.new("BillboardGui")
+    boxGui.Size = UDim2.new(0, 50, 0, 100)
+    boxGui.AlwaysOnTop = true
+    boxGui.Adornee = hrp
+    boxGui.Parent = espContainer
+    local boxFrame = Instance.new("Frame")
+    boxFrame.Size = UDim2.new(1, 0, 1, 0)
+    boxFrame.BackgroundTransparency = 1
+    boxFrame.BorderSizePixel = 0
+    boxFrame.Parent = boxGui
+    local boxStroke = Instance.new("UIStroke")
+    boxStroke.Thickness = 1.5
+    boxStroke.Color = Theme.Accent
+    boxStroke.Parent = boxFrame
+    data.BoxGui = boxGui
+
+    local healthGui = Instance.new("BillboardGui")
+    healthGui.Size = UDim2.new(0, 60, 0, 8)
+    healthGui.AlwaysOnTop = true
+    healthGui.Adornee = hrp
+    healthGui.Parent = espContainer
+    local healthFrame = Instance.new("Frame")
+    healthFrame.Size = UDim2.new(1, 0, 1, 0)
+    healthFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    healthFrame.BackgroundTransparency = 0.4
+    healthFrame.BorderSizePixel = 0
+    healthFrame.Parent = healthGui
+    local healthBar = Instance.new("Frame")
+    healthBar.Size = UDim2.new(1, 0, 1, 0)
+    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    healthBar.BorderSizePixel = 0
+    healthBar.Parent = healthFrame
+    data.HealthGui = healthGui
+    data.HealthBar = healthBar
+
+    local tracerLine = Instance.new("LineHandleAdornment")
+    tracerLine.Adornee = tracerOrigin
+    tracerLine.Thickness = 1.5
+    tracerLine.Color3 = Theme.Accent
+    tracerLine.Transparency = 0.25
+    tracerLine.AlwaysOnTop = true
+    tracerLine.ZIndex = 999
+    tracerLine.Length = 1
+    tracerLine.Parent = worldContainer
+    data.Tracer = {line = tracerLine, partA = tracerOrigin, partB = hrp}
+
+    local rigType = humanoid.RigType == Enum.HumanoidRigType.R15 and "R15" or "R6"
+    for _, conn in pairs(getBoneConnections(rigType)) do
+        local p1 = findPart(char, conn[1])
+        local p2 = findPart(char, conn[2])
+        if p1 and p2 then
+            local lineData = makeLine(p1, p2, Color3.fromRGB(255, 100, 200), 1.5)
+            if lineData then table.insert(data.Bones, lineData) end
+        end
+    end
+
+    VesoHub.ESPObjects[player] = data
+end
+
+local function removeESP(player)
+    if VesoHub.ESPObjects[player] then
+        local d = VesoHub.ESPObjects[player]
+        if d.NameGui then d.NameGui:Destroy() end
+        if d.BoxGui then d.BoxGui:Destroy() end
+        if d.HealthGui then d.HealthGui:Destroy() end
+        if d.Tracer and d.Tracer.line then d.Tracer.line:Destroy() end
+        for _, b in pairs(d.Bones or {}) do if b.line then b.line:Destroy() end end
+        VesoHub.ESPObjects[player] = nil
+    end
+end
+
+local function hideAll(d)
+    if d.NameGui then d.NameGui.Enabled = false end
+    if d.BoxGui then d.BoxGui.Enabled = false end
+    if d.HealthGui then d.HealthGui.Enabled = false end
+    if d.Tracer and d.Tracer.line then d.Tracer.line.Visible = false end
+    for _, b in pairs(d.Bones or {}) do if b.line then b.line.Visible = false end end
+end
+
+local function showAll(d)
+    if d.NameGui then d.NameGui.Enabled = true end
+    if d.BoxGui then d.BoxGui.Enabled = true end
+    if d.HealthGui then d.HealthGui.Enabled = true end
+    if d.Tracer and d.Tracer.line then d.Tracer.line.Visible = true end
+    for _, b in pairs(d.Bones or {}) do if b.line then b.line.Visible = true end end
+end
+
+local espLoop = RunService.RenderStepped:Connect(function()
+    local ok, err = pcall(function()
+        tracerOrigin.CFrame = Camera.CFrame * CFrame.new(0, -1.5, -2)
+        if not VesoHub.Settings.ESP then
+            for _, d in pairs(VesoHub.ESPObjects) do hideAll(d) end
+            return
+        end
+        for player, d in pairs(VesoHub.ESPObjects) do
+            local char = player.Character
+            if not char then hideAll(d) continue end
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not humanoid or not hrp then hideAll(d) continue end
+            if VesoHub.Settings.TeamCheck and player.Team == LocalPlayer.Team then hideAll(d) continue end
+            showAll(d)
+            if d.NameGui then d.NameGui.Enabled = VesoHub.Settings.ESPName end
+            if d.BoxGui then d.BoxGui.Enabled = VesoHub.Settings.ESPBox end
+            if d.HealthGui then d.HealthGui.Enabled = VesoHub.Settings.ESPHealth end
+            if d.Tracer and d.Tracer.line then d.Tracer.line.Visible = VesoHub.Settings.ESPTracers end
+            for _, b in pairs(d.Bones or {}) do
+                if b.line then b.line.Visible = VesoHub.Settings.ESPBone end
+            end
+            if d.BoxGui then
+                local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+                local scale = math.clamp(1000 / distance, 20, 200)
+                d.BoxGui.Size = UDim2.new(0, scale * 0.5, 0, scale * 1.4)
+            end
+            if d.HealthBar then
+                local hp = humanoid.Health / math.max(humanoid.MaxHealth, 1)
+                d.HealthBar.Size = UDim2.new(hp, 0, 1, 0)
+                d.HealthBar.BackgroundColor3 = Color3.fromRGB(math.floor(255 * (1 - hp)), math.floor(255 * hp), 0)
+            end
+            if d.NameGui then
+                local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+                local scale = math.clamp(1000 / distance, 20, 200)
+                d.NameGui.StudsOffsetWorldSpace = Vector3.new(0, 1 + scale * 0.009, 0)
+            end
+            if VesoHub.Settings.ESPBone then
+                for _, b in pairs(d.Bones or {}) do updateLine(b) end
+            end
+            if VesoHub.Settings.ESPTracers and d.Tracer then updateLine(d.Tracer) end
+        end
+    end)
+    if not ok then warn("[VesoHub ESP] " .. tostring(err)) end
+end)
+table.insert(VesoHub.Connections, espLoop)
+
+local function hookPlayer(p)
+    if p == LocalPlayer then return end
+    if p.Character then
+        removeESP(p)
+        task.spawn(safe(function()
+            task.wait(0.2)
+            if VesoHub.Settings.ESP then createESP(p) end
+        end, "hook existing"))
+    end
+    p.CharacterAdded:Connect(safe(function()
+        removeESP(p)
+        task.wait(0.5)
+        if VesoHub.Settings.ESP then createESP(p) end
+    end, "hook respawn"))
+end
+
+createToggle(espScroll, "ESP", false, function(state)
+    VesoHub.Settings.ESP = state
+    if state then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                removeESP(p)
+                task.spawn(safe(function()
+                    task.wait(0.1)
+                    createESP(p)
+                end, "esp on create"))
+            end
+        end
+    else
+        for p, _ in pairs(VesoHub.ESPObjects) do removeESP(p) end
+    end
+end)
+createToggle(espScroll, "ESP Box", true, function(state) VesoHub.Settings.ESPBox = state end)
+createToggle(espScroll, "ESP Health", true, function(state) VesoHub.Settings.ESPHealth = state end)
+createToggle(espScroll, "ESP Name", true, function(state) VesoHub.Settings.ESPName = state end)
+createToggle(espScroll, "ESP Tracers", true, function(state) VesoHub.Settings.ESPTracers = state end)
+createToggle(espScroll, "ESP Bone", true, function(state) VesoHub.Settings.ESPBone = state end)
+createToggle(espScroll, "Team Check", true, function(state) VesoHub.Settings.TeamCheck = state end)
+
+for _, p in pairs(Players:GetPlayers()) do hookPlayer(p) end
+Players.PlayerAdded:Connect(safe(function(p) hookPlayer(p) end, "player added"))
+Players.PlayerRemoving:Connect(safe(function(p) removeESP(p) end, "player removing"))
+
+-- Animation tab
+local animScroll = makeTabScroll(animRoot)
+
+local modeFrame = Instance.new("Frame")
+modeFrame.Size = UDim2.new(1, 0, 0, 32)
+modeFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+modeFrame.BackgroundTransparency = 0.5
+modeFrame.BorderSizePixel = 0
+modeFrame.Parent = animScroll
+createCorner(modeFrame, 6)
+local modeLabel = Instance.new("TextLabel")
+modeLabel.Size = UDim2.new(0.4, 0, 1, 0)
+modeLabel.Position = UDim2.new(0, 10, 0, 0)
+modeLabel.BackgroundTransparency = 1
+modeLabel.Text = "Mode"
+modeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+modeLabel.Font = Enum.Font.Gotham
+modeLabel.TextSize = 13
+modeLabel.TextXAlignment = Enum.TextXAlignment.Left
+modeLabel.Parent = modeFrame
+local modeBtn = Instance.new("TextButton")
+modeBtn.Size = UDim2.new(0, 150, 0, 22)
+modeBtn.Position = UDim2.new(1, -160, 0.5, -11)
+modeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+modeBtn.Text = "Spin"
+modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+modeBtn.Font = Enum.Font.GothamBold
+modeBtn.TextSize = 12
+modeBtn.BorderSizePixel = 0
+modeBtn.Parent = modeFrame
+createCorner(modeBtn, 4)
+local modes = {"Spin", "Float", "Scatter", "Explode", "Wave", "Orbit", "Tornado", "Black Hole", "Ragdoll", "Pulse"}
+local modeIndex = 1
+modeBtn.MouseButton1Click:Connect(safe(function()
+    playClickSound()
+    modeIndex = modeIndex % #modes + 1
+    modeBtn.Text = modes[modeIndex]
+    VesoHub.Animation.Mode = modes[modeIndex]
+end, "mode cycle"))
+
+createSlider(animScroll, "Animation Speed", 0.1, 5, 1, function(val) VesoHub.Animation.Speed = val end)
+createSlider(animScroll, "Move Speed", 5, 100, 30, function(val) VesoHub.Loop.MoveSpeed = val end)
+createToggle(animScroll, "Particle Effects", false, function(state) VesoHub.Animation.Effects = state end)
+
+local function stopAnimation()
+    VesoHub.Animation.Active = false
+    if VesoHub.Animation.Connection then VesoHub.Animation.Connection:Disconnect() VesoHub.Animation.Connection = nil end
+    if VesoHub.Animation.MoveConnection then VesoHub.Animation.MoveConnection:Disconnect() VesoHub.Animation.MoveConnection = nil end
+    for part, cf in pairs(VesoHub.Animation.OriginalCFrames) do
+        if part and part.Parent then part.CFrame = cf part.Anchored = false end
+    end
+    for _, emitter in pairs(VesoHub.Animation.EffectsInstances) do if emitter then emitter:Destroy() end end
+    VesoHub.Animation.EffectsInstances = {}
+end
+
+local function startAnimation()
+    if VesoHub.Animation.Active then return end
+    if #VesoHub.Animation.Parts == 0 then return end
+    VesoHub.Animation.Active = true
+    VesoHub.Animation.Time = 0
+    VesoHub.Animation.Connection = RunService.Heartbeat:Connect(function(dt)
+        if not VesoHub.Animation.Active then return end
+        VesoHub.Animation.Time = VesoHub.Animation.Time + dt * (VesoHub.Animation.Speed or 1)
+        local t = VesoHub.Animation.Time
+        local origin = VesoHub.Animation.Origin
+        local mode = VesoHub.Animation.Mode
+        local total = #VesoHub.Animation.Parts
+        for i, part in pairs(VesoHub.Animation.Parts) do
+            if not part or not part.Parent then continue end
+            if mode == "Spin" then
+                local angle = t * 2 + i * 0.3
+                part.CFrame = CFrame.new(origin + Vector3.new(0, 3, 0)) * CFrame.Angles(angle, angle * 0.7, angle * 0.5) * CFrame.new(0, i * 0.5, 0)
+            elseif mode == "Float" then
+                local yOffset = math.sin(t * 2 + i) * 1
+                part.CFrame = CFrame.new(origin + Vector3.new((i - total/2) * 0.4, 3 + yOffset, 0))
+            elseif mode == "Scatter" then
+                local angle = (i / total) * math.pi * 2 + t
+                local radius = 3 + math.sin(t + i) * 2
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * radius, 3 + math.sin(t * 2 + i), math.sin(angle) * radius))
+            elseif mode == "Explode" then
+                local angle = (i / total) * math.pi * 2
+                local dist = t * 5
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * dist, dist * 0.5 + 3, math.sin(angle) * dist)) * CFrame.Angles(t * 3, t * 2, t)
+            elseif mode == "Wave" then
+                local xOffset = math.sin(t * 2 + i * 0.5) * 2
+                local yOffset = math.cos(t * 2 + i * 0.5) * 2
+                part.CFrame = CFrame.new(origin + Vector3.new((i - total/2) * 0.5 + xOffset, 3 + yOffset, 0))
+            elseif mode == "Orbit" then
+                local angle = t + i * 0.5
+                local radius = 5 + (i % 5)
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * radius, 3 + (i % 5), math.sin(angle) * radius)) * CFrame.Angles(angle, angle, angle)
+            elseif mode == "Tornado" then
+                local angle = t * 3 + i
+                local radius = (i % 10) * 1 + 2
+                local height = (t * 5 + i * 0.5) % 12
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * radius, height, math.sin(angle) * radius)) * CFrame.Angles(angle, angle, angle)
+            elseif mode == "Black Hole" then
+                local angle = (i / total) * math.pi * 2
+                local dist = math.max(0.5, 5 - t * 2)
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * dist, 3 + math.sin(angle) * dist * 0.3, math.sin(angle) * dist)) * CFrame.Angles(t * 5, t * 5, t * 5)
+            elseif mode == "Ragdoll" then
+                if part.Anchored then part.Anchored = false end
+            elseif mode == "Pulse" then
+                local angle = (i / total) * math.pi * 2
+                local radius = 3 + math.sin(t * 4 + i) * 2
+                part.CFrame = CFrame.new(origin + Vector3.new(math.cos(angle) * radius, 3 + math.cos(t * 4 + i) * 1, math.sin(angle) * radius))
+            end
+        end
+    end)
+    VesoHub.Animation.MoveConnection = RunService.Heartbeat:Connect(function(dt)
+        if not VesoHub.Animation.Active then return end
+        local cam = workspace.CurrentCamera
+        local move = Vector3.new(0, 0, 0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+        if move.Magnitude > 0 then
+            move = move.Unit * (VesoHub.Loop.MoveSpeed or 30) * dt
+            VesoHub.Animation.Origin = VesoHub.Animation.Origin + move
+        end
+    end)
+end
+
+local function killAndAnimate(savePos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp and savePos then VesoHub.Loop.SavedPosition = hrp.Position end
+    stopAnimation()
+    humanoid.Health = 0
+    task.wait(0.15)
+    VesoHub.Animation.Parts = {}
+    VesoHub.Animation.OriginalCFrames = {}
+    VesoHub.Animation.EffectsInstances = {}
+    VesoHub.Animation.Origin = VesoHub.Loop.SavedPosition or Vector3.new(0, 0, 0)
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.Anchored = true
+            table.insert(VesoHub.Animation.Parts, part)
+            VesoHub.Animation.OriginalCFrames[part] = part.CFrame
+        end
+    end
+    startAnimation()
+end
+
+createButton(animScroll, "Kill + Animate Loop (WASD)", Color3.fromRGB(180, 60, 60), function()
+    VesoHub.Loop.Enabled = true
+    killAndAnimate(true)
+end)
+createButton(animScroll, "STOP LOOP", Color3.fromRGB(200, 40, 40), function()
+    VesoHub.Loop.Enabled = false
+    VesoHub.Loop.SavedPosition = nil
+    stopAnimation()
+end)
+createButton(animScroll, "Manual: Kill Once", Color3.fromRGB(120, 60, 60), function()
+    VesoHub.Loop.Enabled = false
+    killAndAnimate(true)
+end)
+createButton(animScroll, "Stop Animation", Color3.fromRGB(80, 80, 80), function() stopAnimation() end)
+createButton(animScroll, "Force Respawn (Clear)", Color3.fromRGB(40, 60, 90), function()
+    VesoHub.Loop.Enabled = false
+    VesoHub.Loop.SavedPosition = nil
+    stopAnimation()
+    VesoHub.Animation.Parts = {}
+    VesoHub.Animation.OriginalCFrames = {}
+    VesoHub.Animation.EffectsInstances = {}
+    pcall(function() LocalPlayer.CharacterAutoLoads = true end)
+    LocalPlayer:LoadCharacter()
+end)
+
+LocalPlayer.CharacterAdded:Connect(safe(function(newChar)
+    if not VesoHub.Loop.Enabled then stopAnimation() return end
+    local humanoid = newChar:WaitForChild("Humanoid", 5)
+    local hrp = newChar:WaitForChild("HumanoidRootPart", 5)
+    if not humanoid or not hrp then return end
+    task.wait(0.3)
+    if VesoHub.Animation.Active then VesoHub.Loop.SavedPosition = VesoHub.Animation.Origin end
+    if VesoHub.Loop.SavedPosition then
+        newChar:PivotTo(CFrame.new(VesoHub.Loop.SavedPosition))
+        hrp.CFrame = CFrame.new(VesoHub.Loop.SavedPosition)
+    end
+    task.wait(0.2)
+    if VesoHub.Loop.Enabled then killAndAnimate(false) end
+end, "character added"))
+
+-- Executor tab
+local execScroll = makeTabScroll(execRoot)
+
+local editorRow = Instance.new("Frame")
+editorRow.Size = UDim2.new(1, 0, 0, 200)
+editorRow.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+editorRow.BackgroundTransparency = 0.3
+editorRow.BorderSizePixel = 0
+editorRow.Parent = execScroll
+createCorner(editorRow, 6)
+
+local gutter = Instance.new("ScrollingFrame")
+gutter.Size = UDim2.new(0, 34, 1, -10)
+gutter.Position = UDim2.new(0, 5, 0, 5)
+gutter.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+gutter.BackgroundTransparency = 0.4
+gutter.BorderSizePixel = 0
+gutter.ScrollBarThickness = 0
+gutter.CanvasSize = UDim2.new(0, 0, 0, 0)
+gutter.AutomaticCanvasSize = Enum.AutomaticSize.Y
+gutter.ScrollingEnabled = false
+gutter.Parent = editorRow
+createCorner(gutter, 4)
+
+local gutterLayout = Instance.new("UIListLayout")
+gutterLayout.Padding = UDim.new(0, 0)
+gutterLayout.Parent = gutter
+local gutterPad = Instance.new("UIPadding")
+gutterPad.PaddingRight = UDim.new(0, 6)
+gutterPad.PaddingTop = UDim.new(0, 4)
+gutterPad.Parent = gutter
+
+local scriptScroll = Instance.new("ScrollingFrame")
+scriptScroll.Size = UDim2.new(1, -50, 1, -10)
+scriptScroll.Position = UDim2.new(0, 44, 0, 5)
+scriptScroll.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+scriptScroll.BackgroundTransparency = 0.4
+scriptScroll.BorderSizePixel = 0
+scriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scriptScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scriptScroll.ScrollBarThickness = 6
+scriptScroll.ScrollBarImageColor3 = Theme.Accent
+scriptScroll.Parent = editorRow
+createCorner(scriptScroll, 4)
+registerAccent(scriptScroll, "ScrollBarImageColor3")
+
+local execBox = Instance.new("TextBox")
+execBox.Size = UDim2.new(1, -8, 0, 0)
+execBox.Position = UDim2.new(0, 4, 0, 4)
+execBox.AutomaticSize = Enum.AutomaticSize.Y
+execBox.BackgroundTransparency = 1
+execBox.TextColor3 = Theme.Accent
+execBox.Font = Enum.Font.Code
+execBox.TextSize = 13
+execBox.PlaceholderText = "-- Paste your script here..."
+execBox.Text = ""
+execBox.MultiLine = true
+execBox.TextXAlignment = Enum.TextXAlignment.Left
+execBox.TextYAlignment = Enum.TextYAlignment.Top
+execBox.ClearTextOnFocus = false
+execBox.BorderSizePixel = 0
+execBox.TextWrapped = false
+execBox.Parent = scriptScroll
+registerAccent(execBox, "TextColor3")
+
+local currentLineCount = 0
+local function rebuildLineNumbers()
+    local text = execBox.Text
+    local lines = 1
+    for _ in string.gmatch(text, "\n") do lines = lines + 1 end
+    if lines == currentLineCount then return end
+    currentLineCount = lines
+    for _, c in pairs(gutter:GetChildren()) do
+        if c:IsA("TextLabel") then c:Destroy() end
+    end
+    for i = 1, lines do
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, 0, 0, 16)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = tostring(i)
+        lbl.TextColor3 = Color3.fromRGB(90, 90, 100)
+        lbl.Font = Enum.Font.Code
+        lbl.TextSize = 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Right
+        lbl.TextYAlignment = Enum.TextYAlignment.Top
+        lbl.Parent = gutter
+    end
+    gutter.CanvasSize = UDim2.new(0, 0, 0, lines * 16 + 8)
+end
+
+execBox:GetPropertyChangedSignal("Text"):Connect(safe(rebuildLineNumbers, "line numbers"))
+rebuildLineNumbers()
+
+scriptScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(safe(function()
+    gutter.CanvasPosition = scriptScroll.CanvasPosition
+end, "gutter sync"))
+
+local outHeader = Instance.new("Frame")
+outHeader.Size = UDim2.new(1, 0, 0, 20)
+outHeader.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+outHeader.BackgroundTransparency = 0.4
+outHeader.BorderSizePixel = 0
+outHeader.Parent = execScroll
+createCorner(outHeader, 4)
+
+local outHeaderLabel = Instance.new("TextLabel")
+outHeaderLabel.Size = UDim2.new(1, -10, 1, 0)
+outHeaderLabel.Position = UDim2.new(0, 10, 0, 0)
+outHeaderLabel.BackgroundTransparency = 1
+outHeaderLabel.Text = "Output"
+outHeaderLabel.TextColor3 = Theme.Accent
+outHeaderLabel.Font = Enum.Font.GothamBold
+outHeaderLabel.TextSize = 11
+outHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+outHeaderLabel.Parent = outHeader
+registerAccent(outHeaderLabel, "TextColor3")
+
+local outputConsole = Instance.new("ScrollingFrame")
+outputConsole.Size = UDim2.new(1, 0, 0, 130)
+outputConsole.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+outputConsole.BorderSizePixel = 0
+outputConsole.CanvasSize = UDim2.new(0, 0, 0, 0)
+outputConsole.AutomaticCanvasSize = Enum.AutomaticSize.Y
+outputConsole.ScrollBarThickness = 6
+outputConsole.ScrollBarImageColor3 = Theme.Accent
+outputConsole.Parent = execScroll
+createCorner(outputConsole, 6)
+registerAccent(outputConsole, "ScrollBarImageColor3")
+
+local outputLayout = Instance.new("UIListLayout")
+outputLayout.Padding = UDim.new(0, 2)
+outputLayout.Parent = outputConsole
+local outputPad = Instance.new("UIPadding")
+outputPad.PaddingTop = UDim.new(0, 5)
+outputPad.PaddingLeft = UDim.new(0, 6)
+outputPad.PaddingRight = UDim.new(0, 6)
+outputPad.PaddingBottom = UDim.new(0, 5)
+outputPad.Parent = outputConsole
+
+local function addOutput(text, kind)
+    local color = Color3.fromRGB(220, 220, 225)
+    local prefixColor = Theme.Accent
+    local prefixText = "[INFO]"
+    if kind == "warn" then
+        color = Color3.fromRGB(255, 210, 120)
+        prefixColor = Color3.fromRGB(255, 180, 60)
+        prefixText = "[WARN]"
+    elseif kind == "error" then
+        color = Color3.fromRGB(255, 140, 150)
+        prefixColor = Color3.fromRGB(255, 70, 90)
+        prefixText = "[ERR] "
+    elseif kind == "success" then
+        color = Color3.fromRGB(140, 255, 190)
+        prefixColor = Color3.fromRGB(0, 220, 130)
+        prefixText = "[OK]  "
+    end
+
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 14)
+    row.BackgroundTransparency = 1
+    row.AutomaticSize = Enum.AutomaticSize.Y
+    row.Parent = outputConsole
+
+    local prefix = Instance.new("TextLabel")
+    prefix.Size = UDim2.new(0, 44, 0, 14)
+    prefix.BackgroundTransparency = 1
+    prefix.Text = prefixText
+    prefix.TextColor3 = prefixColor
+    prefix.Font = Enum.Font.Code
+    prefix.TextSize = 11
+    prefix.TextXAlignment = Enum.TextXAlignment.Left
+    prefix.TextYAlignment = Enum.TextYAlignment.Top
+    prefix.Parent = row
+
+    local body = Instance.new("TextLabel")
+    body.Size = UDim2.new(1, -48, 0, 14)
+    body.Position = UDim2.new(0, 48, 0, 0)
+    body.BackgroundTransparency = 1
+    body.Text = tostring(text)
+    body.TextColor3 = color
+    body.Font = Enum.Font.Code
+    body.TextSize = 11
+    body.TextXAlignment = Enum.TextXAlignment.Left
+    body.TextYAlignment = Enum.TextYAlignment.Top
+    body.TextWrapped = true
+    body.AutomaticSize = Enum.AutomaticSize.Y
+    body.Parent = row
+
+    task.wait()
+    local h = math.max(14, body.TextBounds.Y + 2)
+    row.Size = UDim2.new(1, 0, 0, h)
+
+    task.wait()
+    outputConsole.CanvasPosition = Vector2.new(0, outputConsole.AbsoluteCanvasSize.Y)
+end
+
+addOutput("VesoHub executor ready.", "success")
+
+local oldPrint = print
+local oldWarn = warn
+
+local function customPrint(...)
+    oldPrint(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        table.insert(parts, tostring(select(i, ...)))
+    end
+    addOutput(table.concat(parts, " "), "info")
+end
+
+local function customWarn(...)
+    oldWarn(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        table.insert(parts, tostring(select(i, ...)))
+    end
+    addOutput(table.concat(parts, " "), "warn")
+end
+
+local function runWithOutput(code)
+    local env = getfenv and getfenv() or _G
+    local oldEnvPrint = env.print
+    local oldEnvWarn = env.warn
+    local oldEnvLoadstring = env.loadstring
+    env.print = customPrint
+    env.warn = customWarn
+    env.loadstring = function(src, chunkname)
+        local fn, err = oldEnvLoadstring and oldEnvLoadstring(src, chunkname) or loadstring(src, chunkname)
+        if fn and setfenv then setfenv(fn, env) end
+        return fn, err
+    end
+    local ok, err = pcall(function()
+        local fn, lerr = env.loadstring(code)
+        if not fn then error(lerr, 0) end
+        fn()
+    end)
+    env.print = oldEnvPrint
+    env.warn = oldEnvWarn
+    env.loadstring = oldEnvLoadstring
+    return ok, err
+end
+
+createButton(execScroll, "Execute", Theme.AccentDark, function()
+    local code = execBox.Text
+    if not code or code == "" then
+        addOutput("No code to execute.", "warn")
+        return
+    end
+    addOutput(">> Executing...", "info")
+    local ok, err = runWithOutput(code)
+    if ok then
+        addOutput("Script finished.", "success")
+    else
+        addOutput(tostring(err), "error")
+    end
+end)
+
+createButton(execScroll, "Clear Script", Color3.fromRGB(60, 60, 70), function()
+    execBox.Text = ""
+    rebuildLineNumbers()
+end)
+
+-- Settings tab
+local settingsScroll = makeTabScroll(settingsRoot)
+
+local soundFrame = Instance.new("Frame")
+soundFrame.Size = UDim2.new(1, 0, 0, 60)
+soundFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+soundFrame.BackgroundTransparency = 0.5
+soundFrame.BorderSizePixel = 0
+soundFrame.Parent = settingsScroll
+createCorner(soundFrame, 6)
+
+local soundLabel = Instance.new("TextLabel")
+soundLabel.Size = UDim2.new(1, -20, 0, 18)
+soundLabel.Position = UDim2.new(0, 10, 0, 4)
+soundLabel.BackgroundTransparency = 1
+soundLabel.Text = "Click Sound ID"
+soundLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+soundLabel.Font = Enum.Font.Gotham
+soundLabel.TextSize = 12
+soundLabel.TextXAlignment = Enum.TextXAlignment.Left
+soundLabel.Parent = soundFrame
+
+local soundInput = Instance.new("TextBox")
+soundInput.Size = UDim2.new(1, -80, 0, 26)
+soundInput.Position = UDim2.new(0, 10, 0, 26)
+soundInput.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+soundInput.BackgroundTransparency = 0.3
+soundInput.TextColor3 = Theme.Accent
+soundInput.Font = Enum.Font.Code
+soundInput.TextSize = 12
+soundInput.PlaceholderText = "e.g. 8679659744"
+soundInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+soundInput.Text = Theme.SoundId
+soundInput.ClearTextOnFocus = false
+soundInput.BorderSizePixel = 0
+soundInput.Parent = soundFrame
+createCorner(soundInput, 4)
+registerAccent(soundInput, "TextColor3")
+
+local soundSaveBtn = Instance.new("TextButton")
+soundSaveBtn.Size = UDim2.new(0, 56, 0, 26)
+soundSaveBtn.Position = UDim2.new(1, -66, 0, 26)
+soundSaveBtn.BackgroundColor3 = Theme.AccentDark
+soundSaveBtn.Text = "Save"
+soundSaveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+soundSaveBtn.Font = Enum.Font.GothamBold
+soundSaveBtn.TextSize = 12
+soundSaveBtn.BorderSizePixel = 0
+soundSaveBtn.Parent = soundFrame
+createCorner(soundSaveBtn, 4)
+
+soundSaveBtn.MouseButton1Click:Connect(safe(function()
+    local txt = soundInput.Text:gsub("%D", "")
+    Theme.SoundId = txt
+    getgenv().VesoHubSoundId = txt
+    if txt == "" then
+        addOutput("Click Sound ID cleared.", "info")
+    else
+        addOutput("Click Sound ID saved: " .. txt, "success")
+        playClickSound()
+    end
+end, "save sound"))
+
+createButton(settingsScroll, "uwu sound", Color3.fromRGB(255, 130, 200), function()
+    soundInput.Text = Theme.UwUId
+    Theme.SoundId = Theme.UwUId
+    getgenv().VesoHubSoundId = Theme.UwUId
+    addOutput("uwu sound set: " .. Theme.UwUId, "success")
+end)
+
+createToggle(settingsScroll, "Cat Ears", false, function(state)
+    setCatEars(state)
+end)
+
+createToggle(settingsScroll, "Custom Cursor (Ball)", false, function(state)
+    setCustomCursor(state)
+end)
+
+-- design toggle
+local designFrame = Instance.new("Frame")
+designFrame.Size = UDim2.new(1, 0, 0, 32)
+designFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+designFrame.BackgroundTransparency = 0.5
+designFrame.BorderSizePixel = 0
+designFrame.Parent = settingsScroll
+createCorner(designFrame, 6)
+
+local designLabel = Instance.new("TextLabel")
+designLabel.Size = UDim2.new(0.6, 0, 1, 0)
+designLabel.Position = UDim2.new(0, 10, 0, 0)
+designLabel.BackgroundTransparency = 1
+designLabel.Text = "Design"
+designLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+designLabel.Font = Enum.Font.Gotham
+designLabel.TextSize = 13
+designLabel.TextXAlignment = Enum.TextXAlignment.Left
+designLabel.Parent = designFrame
+
+local designBtn = Instance.new("TextButton")
+designBtn.Size = UDim2.new(0, 100, 0, 22)
+designBtn.Position = UDim2.new(1, -110, 0.5, -11)
+designBtn.BackgroundColor3 = Theme.AccentDark
+designBtn.Text = "Modern"
+designBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+designBtn.Font = Enum.Font.GothamBold
+designBtn.TextSize = 12
+designBtn.BorderSizePixel = 0
+designBtn.Parent = designFrame
+createCorner(designBtn, 4)
+
+designBtn.MouseButton1Click:Connect(safe(function()
+    playClickSound()
+    if Theme.Design == "modern" then
+        Theme.Design = "classic"
+        designBtn.Text = "Classic"
+        for _, d in ipairs(mainFrame:GetDescendants()) do
+            if d:IsA("Frame") or d:IsA("TextButton") or d:IsA("TextBox") or d:IsA("ScrollingFrame") then
+                local c = d:FindFirstChildOfClass("UICorner")
+                if c then c.CornerRadius = UDim.new(0, 0) end
+                if d:IsA("Frame") and (d.BackgroundColor3 == Color3.fromRGB(25, 25, 25) or d.BackgroundColor3 == Color3.fromRGB(20, 20, 20) or d.BackgroundColor3 == Color3.fromRGB(15, 15, 15) or d.BackgroundColor3 == Color3.fromRGB(12, 12, 12) or d.BackgroundColor3 == Color3.fromRGB(30, 30, 30)) then
+                    d.BackgroundTransparency = 0
+                    if not d:FindFirstChildOfClass("UIStroke") then
+                        local s = Instance.new("UIStroke")
+                        s.Color = Color3.fromRGB(80, 80, 80)
+                        s.Thickness = 1
+                        s.Parent = d
+                    end
+                end
+            end
+        end
+        mainFrame.BackgroundTransparency = 0
+        titleBar.BackgroundTransparency = 0
+        titleFix.BackgroundTransparency = 0
+    else
+        Theme.Design = "modern"
+        designBtn.Text = "Modern"
+        for _, d in ipairs(mainFrame:GetDescendants()) do
+            if d:IsA("Frame") or d:IsA("TextButton") or d:IsA("TextBox") or d:IsA("ScrollingFrame") then
+                local c = d:FindFirstChildOfClass("UICorner")
+                if c then c.CornerRadius = UDim.new(0, 6) end
+                if d:IsA("Frame") and (d.BackgroundColor3 == Color3.fromRGB(25, 25, 25) or d.BackgroundColor3 == Color3.fromRGB(20, 20, 20) or d.BackgroundColor3 == Color3.fromRGB(15, 15, 15) or d.BackgroundColor3 == Color3.fromRGB(12, 12, 12) or d.BackgroundColor3 == Color3.fromRGB(30, 30, 30)) then
+                    d.BackgroundTransparency = 0.5
+                end
+                local s = d:FindFirstChildOfClass("UIStroke")
+                if s then s:Destroy() end
+            end
+        end
+        mainFrame.BackgroundTransparency = 0.15
+        titleBar.BackgroundTransparency = 0.3
+        titleFix.BackgroundTransparency = 0.3
+    end
+end, "design toggle"))
+
+local colorFrame = Instance.new("Frame")
+colorFrame.Size = UDim2.new(1, 0, 0, 30)
+colorFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+colorFrame.BackgroundTransparency = 0.5
+colorFrame.BorderSizePixel = 0
+colorFrame.Parent = settingsScroll
+createCorner(colorFrame, 6)
+local colorLabel = Instance.new("TextLabel")
+colorLabel.Size = UDim2.new(0.5, 0, 1, 0)
+colorLabel.Position = UDim2.new(0, 10, 0, 0)
+colorLabel.BackgroundTransparency = 1
+colorLabel.Text = "Accent Preview"
+colorLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+colorLabel.Font = Enum.Font.Gotham
+colorLabel.TextSize = 13
+colorLabel.TextXAlignment = Enum.TextXAlignment.Left
+colorLabel.Parent = colorFrame
+local colorPreview = Instance.new("Frame")
+colorPreview.Size = UDim2.new(0, 60, 0, 20)
+colorPreview.Position = UDim2.new(1, -70, 0.5, -10)
+colorPreview.BackgroundColor3 = Theme.Accent
+colorPreview.BorderSizePixel = 0
+colorPreview.Parent = colorFrame
+createCorner(colorPreview, 4)
+
+createSlider(settingsScroll, "Accent Red", 0, 255, 0, function(val)
+    Theme.Accent = Color3.fromRGB(val, Theme.Accent.G * 255, Theme.Accent.B * 255)
+    Theme.AccentDark = Color3.fromRGB(val * 0.6, Theme.Accent.G * 255 * 0.6, Theme.Accent.B * 255 * 0.6)
+    colorPreview.BackgroundColor3 = Theme.Accent
+    updateAccent()
+end)
+createSlider(settingsScroll, "Accent Green", 0, 255, 255, function(val)
+    Theme.Accent = Color3.fromRGB(Theme.Accent.R * 255, val, Theme.Accent.B * 255)
+    Theme.AccentDark = Color3.fromRGB(Theme.Accent.R * 255 * 0.6, val * 0.6, Theme.Accent.B * 255 * 0.6)
+    colorPreview.BackgroundColor3 = Theme.Accent
+    updateAccent()
+end)
+createSlider(settingsScroll, "Accent Blue", 0, 255, 204, function(val)
+    Theme.Accent = Color3.fromRGB(Theme.Accent.R * 255, Theme.Accent.G * 255, val)
+    Theme.AccentDark = Color3.fromRGB(Theme.Accent.R * 255 * 0.6, Theme.Accent.G * 255 * 0.6, val * 0.6)
+    colorPreview.BackgroundColor3 = Theme.Accent
+    updateAccent()
+end)
+
+createButton(settingsScroll, "Test Click Sound", Color3.fromRGB(60, 60, 90), function()
+    if Theme.SoundId == "" then
+        showErrorBadge("No Click Sound ID set")
+        return
+    end
+    playClickSound()
+end)
+
+createButton(settingsScroll, "Reset All Settings", Color3.fromRGB(60, 60, 70), function()
+    Theme.Accent = Color3.fromRGB(0, 255, 204)
+    Theme.AccentDark = Color3.fromRGB(0, 150, 120)
+    Theme.SoundId = Theme.UwUId
+    getgenv().VesoHubSoundId = Theme.UwUId
+    soundInput.Text = Theme.UwUId
+    setCatEars(false)
+    setCustomCursor(false)
+    Theme.Design = "modern"
+    designBtn.Text = "Modern"
+    updateAccent()
+    colorPreview.BackgroundColor3 = Theme.Accent
+end)
+
+-- Explorer
+local dexScreen = Instance.new("ScreenGui")
+dexScreen.Name = "VesoDex"
+dexScreen.ResetOnSpawn = false
+dexScreen.IgnoreGuiInset = true
+dexScreen.Enabled = false
+dexScreen.Parent = CoreGui
+
+local dexFrame = Instance.new("Frame")
+dexFrame.Size = UDim2.new(0, 380, 0, 460)
+dexFrame.Position = UDim2.new(0, 20, 0.5, -230)
+dexFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+dexFrame.BorderSizePixel = 0
+dexFrame.Active = true
+dexFrame.Draggable = true
+dexFrame.ClipsDescendants = true
+dexFrame.Parent = dexScreen
+
+local dexTitle = Instance.new("Frame")
+dexTitle.Size = UDim2.new(1, 0, 0, 26)
+dexTitle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+dexTitle.BorderSizePixel = 0
+dexTitle.Active = false
+dexTitle.Parent = dexFrame
+
+local dexLabel = Instance.new("TextLabel")
+dexLabel.Size = UDim2.new(1, -30, 1, 0)
+dexLabel.Position = UDim2.new(0, 6, 0, 0)
+dexLabel.BackgroundTransparency = 1
+dexLabel.Text = "Explorer"
+dexLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+dexLabel.Font = Enum.Font.SourceSansBold
+dexLabel.TextSize = 14
+dexLabel.TextXAlignment = Enum.TextXAlignment.Left
+dexLabel.Parent = dexTitle
+
+local dexClose = Instance.new("TextButton")
+dexClose.Size = UDim2.new(0, 22, 0, 22)
+dexClose.Position = UDim2.new(1, -26, 0.5, -11)
+dexClose.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+dexClose.Text = "X"
+dexClose.TextColor3 = Color3.fromRGB(220, 220, 220)
+dexClose.Font = Enum.Font.SourceSansBold
+dexClose.TextSize = 12
+dexClose.BorderSizePixel = 0
+dexClose.Parent = dexTitle
+
+local dexScroll = Instance.new("ScrollingFrame")
+dexScroll.Size = UDim2.new(1, 0, 1, -26)
+dexScroll.Position = UDim2.new(0, 0, 0, 26)
+dexScroll.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+dexScroll.BorderSizePixel = 0
+dexScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+dexScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+dexScroll.ScrollBarThickness = 6
+dexScroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
+dexScroll.Parent = dexFrame
+
+local dexLayout = Instance.new("UIListLayout")
+dexLayout.Padding = UDim.new(0, 1)
+dexLayout.Parent = dexScroll
+
+local function buildExplorerRow(parent, instance, depth)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 18)
+    row.BackgroundTransparency = 1
+    row.Parent = parent
+
+    local expand = Instance.new("TextButton")
+    expand.Size = UDim2.new(0, 14, 0, 14)
+    expand.Position = UDim2.new(0, depth * 14 + 2, 0, 2)
+    expand.BackgroundTransparency = 1
+    expand.Text = "+"
+    expand.TextColor3 = Color3.fromRGB(180, 180, 180)
+    expand.Font = Enum.Font.SourceSansBold
+    expand.TextSize = 14
+    expand.BorderSizePixel = 0
+    expand.Parent = row
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 14, 0, 14)
+    icon.Position = UDim2.new(0, depth * 14 + 18, 0, 2)
+    icon.BackgroundTransparency = 1
+    icon.Text = "◆"
+    icon.TextColor3 = Color3.fromRGB(120, 180, 255)
+    icon.Font = Enum.Font.SourceSans
+    icon.TextSize = 11
+    icon.Parent = row
+
+    local nameBtn = Instance.new("TextButton")
+    nameBtn.Size = UDim2.new(1, -(depth * 14 + 36), 1, 0)
+    nameBtn.Position = UDim2.new(0, depth * 14 + 34, 0, 0)
+    nameBtn.BackgroundTransparency = 1
+    nameBtn.Text = instance.Name .. "  (" .. instance.ClassName .. ")"
+    nameBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+    nameBtn.Font = Enum.Font.SourceSans
+    nameBtn.TextSize = 13
+    nameBtn.TextXAlignment = Enum.TextXAlignment.Left
+    nameBtn.BorderSizePixel = 0
+    nameBtn.Parent = row
+
+    local children = instance:GetChildren()
+    if #children == 0 then expand.Text = "" end
+
+    local built = false
+    local childContainer = nil
+    expand.MouseButton1Click:Connect(safe(function()
+        if not built then
+            childContainer = Instance.new("Frame")
+            childContainer.Size = UDim2.new(1, 0, 0, 0)
+            childContainer.AutomaticSize = Enum.AutomaticSize.Y
+            childContainer.BackgroundTransparency = 1
+            childContainer.Visible = true
+            childContainer.Parent = row
+            local cl = Instance.new("UIListLayout")
+            cl.Padding = UDim.new(0, 1)
+            cl.Parent = childContainer
+            for _, c in pairs(children) do
+                buildExplorerRow(childContainer, c, depth + 1)
+            end
+            built = true
+            expand.Text = "-"
+        else
+            childContainer.Visible = not childContainer.Visible
+            expand.Text = childContainer.Visible and "-" or "+"
+        end
+    end, "expand explorer"))
+end
+
+local function refreshDex()
+    for _, c in pairs(dexScroll:GetChildren()) do
+        if not c:IsA("UIListLayout") then c:Destroy() end
+    end
+    buildExplorerRow(dexScroll, game, 0)
+end
+
+dexClose.MouseButton1Click:Connect(safe(function() dexScreen.Enabled = false end, "dex close"))
+
+local dexBuilt = false
+createButton(mainScroll, "Open Explorer (RightCtrl)", Color3.fromRGB(40, 60, 90), function()
+    if not dexBuilt then refreshDex() dexBuilt = true end
+    dexScreen.Enabled = not dexScreen.Enabled
+end)
+
+-- ============ MINIMIZE / RESTORE (with cat ears sync) ============
+local miniGui = nil
+local isMinimized = false
+isMinimizedGlobal = false
+
+local function createMiniButton()
+    if miniGui then miniGui:Destroy() end
+    miniGui = Instance.new("ScreenGui")
+    miniGui.Name = "VesoMini"
+    miniGui.ResetOnSpawn = false
+    miniGui.IgnoreGuiInset = true
+    miniGui.DisplayOrder = 101
+    miniGui.Parent = CoreGui
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 44, 0, 44)
+    btn.Position = UDim2.new(1, -54, 0, 14)
+    btn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    btn.BackgroundTransparency = 0.15
+    btn.Text = "V"
+    btn.TextColor3 = Theme.Accent
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 20
+    btn.BorderSizePixel = 0
+    btn.Active = true
+    btn.Parent = miniGui
+    createCorner(btn, 12)
+    registerAccent(btn, "TextColor3")
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Theme.Accent
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = btn
+    registerAccent(stroke, "Color")
+
+    btn.MouseButton1Click:Connect(safe(function()
+        playClickSound()
+        isMinimized = false
+        isMinimizedGlobal = false
+        mainFrame.Visible = true
+        -- restore cat ears if enabled
+        if Theme.CatEars then
+            catEarsGui.Enabled = true
+            updateEarsPos()
+        end
+        if miniGui then miniGui:Destroy() miniGui = nil end
+    end, "mini restore"))
+end
+
+local function minimize()
+    isMinimized = true
+    isMinimizedGlobal = true
+    mainFrame.Visible = false
+    -- hide cat ears
+    catEarsGui.Enabled = false
+    createMiniButton()
+end
+
+minBtn.MouseButton1Click:Connect(safe(function()
+    playClickSound()
+    minimize()
+end, "min btn"))
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        playClickSound()
+        if isMinimized then
+            isMinimized = false
+            isMinimizedGlobal = false
+            mainFrame.Visible = true
+            -- restore cat ears if enabled
+            if Theme.CatEars then
+                catEarsGui.Enabled = true
+                updateEarsPos()
+            end
+            if miniGui then miniGui:Destroy() miniGui = nil end
+        else
+            minimize()
+        end
+        return
+    end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        playClickSound()
+        if not dexBuilt then
+            task.spawn(safe(function() refreshDex() end, "dex refresh"))
+            dexBuilt = true
+        end
+        dexScreen.Enabled = not dexScreen.Enabled
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(safe(function()
+    playClickSound()
+    for _, conn in pairs(VesoHub.Connections) do
+        if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end
+    end
+    for p, _ in pairs(VesoHub.ESPObjects) do removeESP(p) end
+    VesoHub.Loop.Enabled = false
+    stopAnimation()
+    for _, s in pairs(activeSounds) do pcall(function() s:Destroy() end) end
+    pcall(function() UserInputService.MouseIconEnabled = true end)
+    if espContainer then espContainer:Destroy() end
+    if worldContainer then worldContainer:Destroy() end
+    if miniGui then miniGui:Destroy() end
+    if catEarsGui then catEarsGui:Destroy() end
+    if cursorGui then cursorGui:Destroy() end
+    screenGui:Destroy()
+    dexScreen:Destroy()
+end, "close"))
+
+task.delay(0.3, safe(function()
+    showLoadedBadge()
+    playOpenSound()
+end, "badge"))
